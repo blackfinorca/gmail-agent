@@ -61,23 +61,29 @@ class GmailClient:
         if not self.service:
             self.authenticate()
 
-        messages_out = []
         query = f"after:{since_timestamp}"
+        msg_refs = []
+        page_token = None
 
-        try:
-            response = (
-                self.service.users()
-                .messages()
-                .list(userId="me", q=query)
-                .execute()
-            )
-        except HttpError as e:
-            logger.error("Failed to list messages: %s", e)
-            return []
+        # Paginate through all results
+        while True:
+            try:
+                kwargs = {"userId": "me", "q": query, "maxResults": 500}
+                if page_token:
+                    kwargs["pageToken"] = page_token
+                response = self.service.users().messages().list(**kwargs).execute()
+            except HttpError as e:
+                logger.error("Failed to list messages: %s", e)
+                break
 
-        msg_refs = response.get("messages", [])
+            msg_refs.extend(response.get("messages", []))
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+
         logger.info("Found %d new message(s) since %d", len(msg_refs), since_timestamp)
 
+        messages_out = []
         for ref in msg_refs:
             try:
                 msg = (
@@ -86,8 +92,7 @@ class GmailClient:
                     .get(userId="me", id=ref["id"], format="full")
                     .execute()
                 )
-                parsed = self._parse_message(msg)
-                messages_out.append(parsed)
+                messages_out.append(self._parse_message(msg))
             except HttpError as e:
                 logger.error("Failed to fetch message %s: %s", ref["id"], e)
 
