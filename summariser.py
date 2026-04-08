@@ -41,7 +41,7 @@ SYSTEM_PROMPT = (
 "- 'none' — informational, resolved, or no action required\n\n"
 
 "Respond with valid JSON only. No preamble. Exact shape:\n"
-"{\"summary\": \"<h3>TL;DR</h3>...\", \"pending_action\": \"you\" | \"them\" | \"none\"}"
+"{{\"summary\": \"<h3>TL;DR</h3>...\", \"pending_action\": \"you\" | \"them\" | \"none\"}}"
 )
 
 USER_TEMPLATE = """\
