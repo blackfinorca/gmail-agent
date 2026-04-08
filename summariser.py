@@ -101,6 +101,47 @@ class Summariser:
     def initial_summary(self, message: dict) -> tuple:
         return self.update_summary("", message)
 
+    def update_sender_summary(self, existing_summary: str, new_messages: list[dict]) -> tuple:
+        """Update a per-sender one-pager with a batch of new messages. Returns (summary, pending_action)."""
+        system = SYSTEM_PROMPT.format(max_tokens=self.max_tokens)
+
+        msgs_text = ""
+        for i, msg in enumerate(new_messages, 1):
+            msgs_text += (
+                f"--- Message {i} ---\n"
+                f"From: {msg.get('sender', '')}\n"
+                f"Date: {msg.get('date', '')}\n"
+                f"Subject: {msg.get('subject', '')}\n\n"
+                f"{msg.get('body_text', '') or msg.get('snippet', '')}\n\n"
+            )
+
+        user = (
+            f"CURRENT SUMMARY:\n{existing_summary or 'No summary yet.'}\n\n"
+            f"NEW MESSAGES ({len(new_messages)}):\n{msgs_text}"
+            "Update the summary to reflect all new messages above, then determine whose action is pending."
+        )
+
+        try:
+            response = self.client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=self._api_max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+            raw = _extract_json(response.content[0].text)
+            data = json.loads(raw)
+            summary = data.get("summary", "").strip()
+            pending_action = data.get("pending_action", "none")
+            if pending_action not in ("you", "them", "none"):
+                pending_action = "none"
+            return summary, pending_action
+        except anthropic.APIError as e:
+            logger.error("Anthropic API error: %s", e)
+            raise
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error("Failed to parse summariser response: %s | raw=%r", e, locals().get("raw", ""))
+            return locals().get("raw", ""), "none"
+
     def summarise_thread(self, messages: list) -> tuple:
         """Summarise an entire thread from scratch. Returns (summary, pending_action)."""
         system = (

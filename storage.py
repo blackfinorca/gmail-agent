@@ -7,10 +7,9 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS threads (
-    thread_id       TEXT PRIMARY KEY,
-    sender          TEXT,
-    subject         TEXT,
+CREATE TABLE IF NOT EXISTS sender_summaries (
+    sender_email    TEXT PRIMARY KEY,
+    display_name    TEXT,
     summary         TEXT,
     message_count   INTEGER DEFAULT 0,
     last_updated    INTEGER,
@@ -56,49 +55,48 @@ class Storage:
     def _init_db(self):
         with self._conn() as conn:
             conn.executescript(SCHEMA)
-            # Migrate existing DBs that predate the pending_action column
-            cols = [r[1] for r in conn.execute("PRAGMA table_info(threads)").fetchall()]
-            if "pending_action" not in cols:
-                conn.execute("ALTER TABLE threads ADD COLUMN pending_action TEXT DEFAULT 'none'")
 
-    # --- Threads ---
+    # --- Sender summaries ---
 
-    def get_summary(self, thread_id: str) -> Optional[dict]:
+    def get_sender_summary(self, sender_email: str) -> Optional[dict]:
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT * FROM threads WHERE thread_id = ?", (thread_id,)
+                "SELECT * FROM sender_summaries WHERE sender_email = ?", (sender_email,)
             ).fetchone()
             return dict(row) if row else None
 
-    def upsert_summary(
+    def upsert_sender_summary(
         self,
-        thread_id: str,
-        sender: str,
-        subject: str,
+        sender_email: str,
+        display_name: str,
         summary: str,
         matched_rule: str,
         pending_action: str = "none",
+        message_count_delta: int = 1,
     ):
         now = int(time.time())
         with self._conn() as conn:
             conn.execute(
                 """
-                INSERT INTO threads (thread_id, sender, subject, summary, message_count, last_updated, matched_rule, pending_action)
-                VALUES (?, ?, ?, ?, 1, ?, ?, ?)
-                ON CONFLICT(thread_id) DO UPDATE SET
+                INSERT INTO sender_summaries
+                    (sender_email, display_name, summary, message_count, last_updated, matched_rule, pending_action)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(sender_email) DO UPDATE SET
+                    display_name   = excluded.display_name,
                     summary        = excluded.summary,
+                    message_count  = message_count + ?,
                     last_updated   = excluded.last_updated,
-                    message_count  = message_count + 1,
                     matched_rule   = excluded.matched_rule,
                     pending_action = excluded.pending_action
                 """,
-                (thread_id, sender, subject, summary, now, matched_rule, pending_action),
+                (sender_email, display_name, summary, message_count_delta, now, matched_rule, pending_action,
+                 message_count_delta),
             )
 
-    def get_all_threads(self) -> list[dict]:
+    def get_all_sender_summaries(self) -> list[dict]:
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT * FROM threads ORDER BY last_updated DESC"
+                "SELECT * FROM sender_summaries ORDER BY last_updated DESC"
             ).fetchall()
             return [dict(r) for r in rows]
 
@@ -112,7 +110,6 @@ class Storage:
             return row is not None
 
     def clear_processed_since(self, since_timestamp: int):
-        """Remove processed-message records so they can be re-evaluated."""
         with self._conn() as conn:
             conn.execute(
                 "DELETE FROM processed_messages WHERE processed_at >= ?",
@@ -150,7 +147,6 @@ class Storage:
             ).fetchone()
             if row and row["last_run"]:
                 return row["last_run"]
-            # Default: 24 hours ago
             return int(time.time()) - 86400
 
 
@@ -160,7 +156,6 @@ if __name__ == "__main__":
     db_path = "./test_agent.db"
     storage = Storage(db_path)
     print("DB initialised at:", db_path)
-    print("Tables created. Schema:")
     with storage._conn() as conn:
         tables = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"

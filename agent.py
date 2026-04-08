@@ -67,6 +67,20 @@ class Agent:
     def _handle_sigusr1(self, signum, frame):
         self._pending_reload = True
 
+    @staticmethod
+    def _extract_email(sender_str: str) -> str:
+        """Extract bare email address from 'Name <email>' or return as-is."""
+        import re
+        m = re.search(r"<([^>]+)>", sender_str)
+        return m.group(1).lower().strip() if m else sender_str.lower().strip()
+
+    @staticmethod
+    def _extract_display_name(sender_str: str) -> str:
+        """Return display name from 'Name <email>', or the email if no name."""
+        import re
+        m = re.match(r"^(.+?)\s*<[^>]+>$", sender_str.strip())
+        return m.group(1).strip().strip('"') if m else sender_str.strip()
+
     def run_once(self, since_override: int | None = None):
         run_at = int(time.time())
         messages_seen = 0
@@ -91,45 +105,48 @@ class Agent:
         messages_seen = len(messages)
         logger.info("Fetched %d message(s)", messages_seen)
 
+        # Group unprocessed, matched messages by sender email
+        sender_batches: dict[str, list] = {}
         for msg in messages:
-            msg_id = msg["id"]
-            thread_id = msg["thread_id"]
-
-            if self.storage.is_processed(msg_id):
+            if self.storage.is_processed(msg["id"]):
                 continue
-
             if not self.filter.matches(msg):
                 continue
+            sender_email = self._extract_email(msg["sender"])
+            sender_batches.setdefault(sender_email, []).append(msg)
 
-            messages_matched += 1
-            rule = self.filter.classify(msg)
-            logger.info("Matched message %s (rule: %s)", msg_id, rule)
+        messages_matched = sum(len(v) for v in sender_batches.values())
+
+        for sender_email, batch in sender_batches.items():
+            rule = self.filter.classify(batch[0])
+            display_name = self._extract_display_name(batch[0]["sender"])
+            logger.info("Processing %d message(s) from %s (rule: %s)", len(batch), sender_email, rule)
 
             try:
-                thread_messages = self.gmail.fetch_thread_messages(thread_id)
-                if not thread_messages:
-                    thread_messages = [msg]  # fallback to just the triggering message
+                existing = self.storage.get_sender_summary(sender_email)
+                existing_summary = existing["summary"] if existing else ""
 
-                new_summary, pending_action = self.summariser.summarise_thread(thread_messages)
+                new_summary, pending_action = self.summariser.update_sender_summary(
+                    existing_summary, batch
+                )
                 llm_calls += 1
 
-                # Mark all messages in the thread as processed
-                for tm in thread_messages:
-                    self.storage.mark_processed(tm["id"], thread_id)
+                for msg in batch:
+                    self.storage.mark_processed(msg["id"], msg["thread_id"])
 
-                self.storage.upsert_summary(
-                    thread_id=thread_id,
-                    sender=msg["sender"],
-                    subject=msg["subject"],
+                self.storage.upsert_sender_summary(
+                    sender_email=sender_email,
+                    display_name=display_name,
                     summary=new_summary,
                     matched_rule=rule,
                     pending_action=pending_action,
+                    message_count_delta=len(batch),
                 )
-                logger.info("Summary updated for thread %s (%d messages)", thread_id, len(thread_messages))
+                logger.info("Sender summary updated for %s (%d new messages)", sender_email, len(batch))
 
             except Exception as e:
-                logger.error("Error processing message %s: %s", msg_id, e)
-                errors.append(f"msg:{msg_id} — {e}")
+                logger.error("Error processing sender %s: %s", sender_email, e)
+                errors.append(f"sender:{sender_email} — {e}")
 
         self.storage.log_run(
             run_at=run_at,
