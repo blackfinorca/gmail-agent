@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ thread.subject }} — Gmail Agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f1117;
+      color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      padding: 24px;
+      max-width: 860px;
+    }
+
+    .back a {
+      color: #58a6ff;
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .back a:hover { text-decoration: underline; }
+
+    h1 { color: #e6edf3; font-size: 18px; margin: 16px 0 8px; }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 4px 16px;
+      color: #8b949e;
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+
+    .meta-grid .label { color: #8b949e; }
+    .meta-grid .value { color: #c9d1d9; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+    .badge-sender { background: #1f4068; color: #58a6ff; }
+    .badge-keyword { background: #2d2f0a; color: #e3b341; }
+    .badge-unmatched { background: #21262d; color: #8b949e; }
+    .action-you  { background: #3d1f00; color: #f0883e; }
+    .action-them { background: #0d2b1d; color: #3fb950; }
+    .action-none { background: #21262d; color: #8b949e; }
+
+    .summary-box {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 20px 24px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      color: #e6edf3;
+    }
+
+    .summary-label {
+      color: #8b949e;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="back"><a href="/">← Back to all threads</a></div>
+
+  <h1>{{ thread.subject }}</h1>
+
+  <div class="meta-grid">
+    <span class="label">Sender</span>
+    <span class="value">{{ thread.sender }}</span>
+
+    <span class="label">Messages</span>
+    <span class="value">{{ thread.message_count }}</span>
+
+    <span class="label">Last updated</span>
+    <span class="value">{{ thread.relative_time }}</span>
+
+    <span class="label">Action pending</span>
+    <span class="value">
+      {% set pa = thread.pending_action or 'none' %}
+      {% if pa == 'you' %}
+        <span class="badge action-you">You to reply</span>
+      {% elif pa == 'them' %}
+        <span class="badge action-them">Waiting on them</span>
+      {% else %}
+        <span class="badge action-none">No action</span>
+      {% endif %}
+    </span>
+
+    <span class="label">Matched rule</span>
+    <span class="value">
+      {% set rule = thread.matched_rule or '' %}
+      {% if rule.startswith('sender:') %}
+        <span class="badge badge-sender">{{ rule }}</span>
+      {% elif rule.startswith('keyword:') %}
+        <span class="badge badge-keyword">{{ rule }}</span>
+      {% else %}
+        <span class="badge badge-unmatched">{{ rule }}</span>
+      {% endif %}
+    </span>
+  </div>
+
+  <div class="summary-label">Current Summary</div>
+  <div class="summary-box">{{ thread.summary | safe if thread.summary else 'No summary available.' }}</div>
+</body>
+</html>

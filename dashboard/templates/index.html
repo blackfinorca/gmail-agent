@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="60">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gmail Intelligence Agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f1117;
+      color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      padding: 24px;
+    }
+
+    h1 { color: #58a6ff; font-size: 20px; margin-bottom: 4px; }
+
+    .stats-bar {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 24px;
+      color: #8b949e;
+      font-size: 13px;
+    }
+
+    .stats-bar span { color: #c9d1d9; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      text-align: left;
+      color: #8b949e;
+      border-bottom: 1px solid #21262d;
+      padding: 8px 12px;
+      font-weight: normal;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #161b22;
+      vertical-align: top;
+    }
+
+    tr:hover td { background: #161b22; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    .badge-sender { background: #1f4068; color: #58a6ff; }
+    .badge-keyword { background: #2d2f0a; color: #e3b341; }
+    .badge-unmatched { background: #21262d; color: #8b949e; }
+
+    .subject a {
+      color: #c9d1d9;
+      text-decoration: none;
+    }
+    .subject a:hover { color: #58a6ff; text-decoration: underline; }
+
+    .snippet { color: #8b949e; font-size: 12px; margin-top: 4px; }
+    .meta { color: #8b949e; font-size: 12px; }
+    .count { color: #8b949e; }
+
+    .action-you     { background: #3d1f00; color: #f0883e; }
+    .action-them    { background: #0d2b1d; color: #3fb950; }
+    .action-none    { background: #21262d; color: #8b949e; }
+
+    .empty {
+      text-align: center;
+      color: #8b949e;
+      padding: 60px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Gmail Intelligence Agent</h1>
+
+  <div class="stats-bar">
+    <div>Threads tracked: <span>{{ total }}</span></div>
+    <div>Last agent run: <span>{{ last_run }}</span></div>
+    <div>Auto-refresh: <span>60s</span></div>
+  </div>
+
+  {% if threads %}
+  <table>
+    <thead>
+      <tr>
+        <th>Rule</th>
+        <th>Action</th>
+        <th>Sender</th>
+        <th>Subject &amp; Summary</th>
+        <th>Msgs</th>
+        <th>Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in threads %}
+      <tr>
+        <td>
+          {% set rule = t.matched_rule or '' %}
+          {% if rule.startswith('sender:') %}
+            <span class="badge badge-sender">{{ rule }}</span>
+          {% elif rule.startswith('keyword:') %}
+            <span class="badge badge-keyword">{{ rule }}</span>
+          {% else %}
+            <span class="badge badge-unmatched">{{ rule }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% set pa = t.pending_action or 'none' %}
+          {% if pa == 'you' %}
+            <span class="badge action-you">You to reply</span>
+          {% elif pa == 'them' %}
+            <span class="badge action-them">Waiting on them</span>
+          {% else %}
+            <span class="badge action-none">No action</span>
+          {% endif %}
+        </td>
+        <td class="meta">{{ t.sender }}</td>
+        <td>
+          <div class="subject">
+            <a href="/thread/{{ t.thread_id }}">{{ t.subject }}</a>
+          </div>
+          {% if t.summary_snippet %}
+          <div class="snippet">{{ t.summary_snippet }}{% if t.summary|length > 120 %}…{% endif %}</div>
+          {% endif %}
+        </td>
+        <td class="count">{{ t.message_count }}</td>
+        <td class="meta">{{ t.relative_time }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No threads tracked yet. The agent will populate this as emails arrive.</div>
+  {% endif %}
+</body>
+</html>
