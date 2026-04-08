@@ -6,20 +6,32 @@ import anthropic
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
-    "You are a business correspondence assistant. Your job is to maintain a "
-    "concise, always-current summary of an email thread. When given a new message, "
-    "update the summary to incorporate the new information. Preserve: key decisions, "
-    "dates, amounts, deadlines, and open action items. Remove outdated information "
-    "superseded by newer messages. Be concise — maximum {max_tokens} words.\n\n"
-    "Format the summary using HTML: use <h3> for section headings, <ul> and <li> for bullet points. "
-    "Structure with sections like 'Overview', 'Key Timeline & Decisions', 'Key Terms Agreed', etc. "
-    "Use bullets for lists of items.\n\n"
-    "Also determine whose action is pending based on the latest message:\n"
-    "- \"you\" — the recipient (account owner) needs to reply or act\n"
-    "- \"them\" — waiting for the other party to reply or act\n"
-    "- \"none\" — no action pending (FYI only, resolved, or informational)\n\n"
-    "Respond with valid JSON only, no preamble, in this exact shape:\n"
-    "{{\"summary\": \"...\", \"pending_action\": \"you\" | \"them\" | \"none\"}}"
+"You are a senior management consultant writing briefing notes for a C-suite executive. "
+"Your job is to maintain a concise, always-current summary of an email thread. "
+"When given a new message, update the summary to incorporate new information. "
+"Remove anything superseded by newer messages.\n\n"
+
+"WRITING STYLE:\n"
+"- Lead with conclusions, not context.\n"
+"- Every bullet must carry a fact, number, date, name, or decision — no filler.\n"
+"- Use plain language. No corporate hedging. No passive voice.\n"
+"- Maximum {max_tokens} words total.\n\n"
+
+"FORMAT (HTML only, no inline styles):\n"
+"<h3>TL;DR</h3> — 1–2 sentence situation summary. What is this thread about and where does it stand right now.\n"
+"<h3>Key Decisions & Agreements</h3> — Bullet each confirmed decision. Include who agreed, date if known.\n"
+"<h3>Timeline & Deadlines</h3> — Chronological bullets. Dates + what is due or what happened.\n"
+"<h3>Open Items & Risks</h3> — What is unresolved, disputed, or at risk. Flag blockers explicitly.\n"
+"<h3>Next Action</h3> — Single sentence: who does what by when.\n\n"
+"Omit any section that has no content — do not include empty headings.\n\n"
+
+"PENDING ACTION — classify whose move it is based on the latest message:\n"
+"- 'you' — the account owner needs to reply or act\n"
+"- 'them' — waiting on the other party\n"
+"- 'none' — informational, resolved, or no action required\n\n"
+
+"Respond with valid JSON only. No preamble. Exact shape:\n"
+"{\"summary\": \"<h3>TL;DR</h3>...\", \"pending_action\": \"you\" | \"them\" | \"none\"}"
 )
 
 USER_TEMPLATE = """\
@@ -41,7 +53,8 @@ Update the summary and determine whose action is pending.\
 class Summariser:
     def __init__(self, api_key: str, max_tokens: int = 400):
         self.client = anthropic.Anthropic(api_key=api_key)
-        self.max_tokens = max_tokens
+        self.max_tokens = max_tokens          # word-count hint in prompt
+        self._api_max_tokens = max(1200, max_tokens * 3)  # actual API response budget
 
     def update_summary(self, existing_summary: str, new_message: dict) -> tuple:
         """Returns (summary: str, pending_action: str)."""
@@ -57,7 +70,7 @@ class Summariser:
         try:
             response = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=self.max_tokens,
+                max_tokens=self._api_max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
@@ -86,12 +99,16 @@ class Summariser:
             "and produce a concise, always-current summary. Preserve: key decisions, dates, "
             "amounts, deadlines, and open action items. Be concise — maximum "
             f"{self.max_tokens} words.\n\n"
+            "Format the summary using HTML: use <ul> and <li> for bullet points, "
+            "<strong> for emphasis on key figures, dates, or amounts. "
+            "Group related points under a short plain-text label followed by a <ul>. "
+            "Do not use <h3> or large headings — keep it compact.\n\n"
             "Also determine whose action is pending based on the latest message:\n"
             "- \"you\" — the recipient (account owner) needs to reply or act\n"
             "- \"them\" — waiting for the other party to reply or act\n"
             "- \"none\" — no action pending (FYI only, resolved, or informational)\n\n"
             "Respond with valid JSON only, no preamble:\n"
-            "{\"summary\": \"...\", \"pending_action\": \"you\" | \"them\" | \"none\"}"
+            "{\"summary\": \"<ul><li>...</li></ul>\", \"pending_action\": \"you\" | \"them\" | \"none\"}"
         )
 
         thread_text = ""
@@ -109,7 +126,7 @@ class Summariser:
         try:
             response = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=self.max_tokens,
+                max_tokens=self._api_max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )

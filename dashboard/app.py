@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 
@@ -32,7 +33,8 @@ def index():
     last_run = storage.get_last_run_timestamp()
     for t in threads:
         t["relative_time"] = relative_time(t.get("last_updated", 0))
-        t["summary_snippet"] = (t.get("summary") or "")[:120]
+        raw = re.sub(r"<[^>]+>", " ", t.get("summary") or "")
+        t["summary_snippet"] = re.sub(r"\s+", " ", raw).strip()[:120]
     return render_template(
         "index.html",
         threads=threads,
