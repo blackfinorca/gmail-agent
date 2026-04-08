@@ -1,9 +1,19 @@
 import json
 import logging
+import re
 
 import anthropic
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_json(text: str) -> str:
+    """Strip markdown code fences and return the bare JSON string."""
+    text = text.strip()
+    # Remove ```json ... ``` or ``` ... ``` wrappers
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    return text.strip()
 
 SYSTEM_PROMPT = (
 "You are a senior management consultant writing briefing notes for a C-suite executive. "
@@ -74,7 +84,7 @@ class Summariser:
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
-            raw = response.content[0].text.strip()
+            raw = _extract_json(response.content[0].text)
             data = json.loads(raw)
             summary = data.get("summary", "").strip()
             pending_action = data.get("pending_action", "none")
@@ -85,9 +95,8 @@ class Summariser:
             logger.error("Anthropic API error: %s", e)
             raise
         except (json.JSONDecodeError, KeyError) as e:
-            logger.error("Failed to parse summariser response: %s", e)
-            # Fallback: treat raw text as summary
-            return raw, "none"
+            logger.error("Failed to parse summariser response: %s | raw=%r", e, locals().get("raw", ""))
+            return locals().get("raw", ""), "none"
 
     def initial_summary(self, message: dict) -> tuple:
         return self.update_summary("", message)
@@ -130,7 +139,7 @@ class Summariser:
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
-            raw = response.content[0].text.strip()
+            raw = _extract_json(response.content[0].text)
             data = json.loads(raw)
             summary = data.get("summary", "").strip()
             pending_action = data.get("pending_action", "none")
@@ -141,8 +150,8 @@ class Summariser:
             logger.error("Anthropic API error: %s", e)
             raise
         except (json.JSONDecodeError, KeyError) as e:
-            logger.error("Failed to parse summariser response: %s", e)
-            return raw, "none"
+            logger.error("Failed to parse summariser response: %s | raw=%r", e, locals().get("raw", ""))
+            return locals().get("raw", ""), "none"
 
 
 if __name__ == "__main__":
