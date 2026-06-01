@@ -98,9 +98,13 @@ terminal (with the venv active):
 python dashboard/app.py
 ```
 
-Then open <http://localhost:5050>. The index page lists every tracked sender
+Then open <http://localhost:5050>. The **Emails** tab lists every tracked sender
 grouped together, with the briefing snippet and a pending-action badge.
 Click a sender to see the full HTML briefing. Auto-refreshes every 60s.
+
+The **Invoices** tab at <http://localhost:5050/invoices> lists all extracted
+invoices (amount, due date, company, link) ordered by received date.
+
 Read-only — no write endpoints.
 
 ---
@@ -111,14 +115,17 @@ Edit `rules.json` — partial matches are case-insensitive:
 
 ```json
 {
-  "sender_whitelist": ["billing@", "accounts@", "@acme.com"],
-  "keywords": ["invoice", "purchase order", "payment due", "contract"]
+  "thread_list": ["billing@", "accounts@", "@acme.com"],
+  "invoice_senders": ["invoices@vendor.com", "@billing.stripe.com"]
 }
 ```
 
-- **`sender_whitelist`** — substring match against the `From:` header
-  (e.g. `"@acme.com"` matches any sender at that domain).
-- **`keywords`** — case-insensitive substring match against subject + body.
+- **`thread_list`** — substring match against the `From:` header for the
+  **Emails** pipeline: each matching sender gets a rolling per-sender
+  briefing-note summary.
+- **`invoice_senders`** — substring match against the `From:` header for the
+  **Invoices** pipeline: each matching message is scanned by Claude for
+  structured invoice fields and stored in the `invoices` table.
 
 ### Hot-reload without restart
 
@@ -152,12 +159,12 @@ are applied on the next poll cycle.
 ├── config.py           — loads .env + rules.json
 ├── filter_engine.py    — sender / keyword matching
 ├── gmail_client.py     — Gmail OAuth + paginated message fetch
-├── storage.py          — SQLite (sender_summaries, processed_messages, run_log)
+├── storage.py          — SQLite (sender_summaries, invoices, processed_messages, run_log)
 ├── summariser.py       — Claude prompts + JSON-shaped responses
 ├── rules.json          — editable filter rules (hot-reloadable)
 ├── dashboard/
 │   ├── app.py          — Flask app (read-only)
-│   └── templates/      — index.html, sender.html
+│   └── templates/      — index.html, sender.html, invoices.html
 └── credentials/        — OAuth client + token (gitignored)
 ```
 
