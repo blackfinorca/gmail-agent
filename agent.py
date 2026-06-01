@@ -81,11 +81,16 @@ class Agent:
         return m.group(1).lower().strip() if m else sender_str.lower().strip()
 
     @staticmethod
-    def _invoice_key(invoice_number: str, sender_email: str, message_id: str) -> str:
-        """Dedupe key: invoice_number+sender, else fall back to message_id."""
+    def _invoice_key(invoice_number: str, company: str, amount: str,
+                     sender_email: str, message_id: str) -> str:
+        """Dedupe key: invoice_number+sender if numbered; else company+amount+sender
+        (collapses re-sends of an unnumbered invoice); else the message_id."""
         num = (invoice_number or "").strip()
         if num:
             return f"{num}|{sender_email}"
+        comp, amt = (company or "").strip().lower(), (amount or "").strip()
+        if comp and amt:
+            return f"{comp}|{amt}|{sender_email}"
         return message_id
 
     @staticmethod
@@ -213,7 +218,13 @@ class Agent:
                     logger.info("Message %s from %s is not an invoice — skipped", msg["id"], sender_email)
                     continue
 
-                key = self._invoice_key(data["invoice_number"], sender_email, msg["id"])
+                if not data["amount"].strip():
+                    logger.info("PDF from %s has no amount — not a real invoice, skipped", sender_email)
+                    continue
+
+                key = self._invoice_key(
+                    data["invoice_number"], data["company"], data["amount"], sender_email, msg["id"]
+                )
                 self.storage.upsert_invoice(
                     invoice_key=key,
                     message_id=msg["id"],

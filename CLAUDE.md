@@ -122,10 +122,12 @@ CREATE TABLE IF NOT EXISTS run_log (
 );
 ```
 
-`invoice_key` dedup logic: `invoice_number|sender_email` when an invoice
-number is present, otherwise falls back to `message_id`. `sent_at` is the
-email's received date (unix); `payable_at` is the due date as text exactly
-as extracted by the model.
+`invoice_key` dedup logic: `invoice_number|sender_email` when numbered; else
+`company|amount|sender_email` (collapses re-sends of an unnumbered invoice);
+else `message_id`. A PDF the model marks as an invoice but with an **empty
+amount** is skipped entirely (bank slips, engagement letters, scope docs — not
+real invoices). `sent_at` is the email's received date (unix); `payable_at` is
+the due date as text exactly as extracted by the model.
 
 `processed_messages` is the dedupe ledger shared by both pipelines; `--since`
 clears it for a chosen window so the agent can rescan.
