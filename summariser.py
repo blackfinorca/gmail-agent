@@ -50,13 +50,26 @@ INVOICE_SYSTEM_PROMPT = (
     "invoice (newsletter, marketing, a plain receipt/confirmation with nothing due, "
     "general correspondence), return is_invoice false and leave the other fields empty.\n\n"
     "Extract:\n"
-    "- billed_to: the person or company the invoice is addressed to\n"
-    "- invoice_name: a short title or description of what the invoice is for\n"
-    "- company: the company issuing the invoice\n"
-    "- invoice_number: the invoice or reference number ('' if none)\n"
-    "- amount: total amount due, keep the currency symbol ('' if none)\n"
+    "- billed_to: the customer the invoice is billed TO (the 'Invoice for' / "
+    "'Bill to' party). Prefer the organisation name over an individual contact "
+    "or job title. This is NOT the issuer.\n"
+    "- invoice_name: the invoice title or a short description of the services\n"
+    "- company: the business ISSUING the invoice (the payee / 'Invoice from')\n"
+    "- invoice_number: the invoice/reference number only — strip any label like "
+    "'Invoice No:' (e.g. '250', not 'Invoice No: 250'). '' if none\n"
+    "- amount: the TOTAL amount payable INCLUDING tax (the grand 'Total' / "
+    "'Total payable'), NOT the pre-tax subtotal. Keep the currency code/symbol "
+    "(e.g. '275,000 JPY'). '' if none\n"
     "- payable_at: the payment due date exactly as written ('' if none)\n"
     "- link: the URL to view or pay the invoice from the email body ('' if none)\n\n"
+    "EXAMPLE — an invoice issued by 'ATSUNORI TSUJIMURA CPA & CPTA', addressed to "
+    "'Yunison Pte Ltd', titled 'Due Diligence Services (Down Payment)', Invoice "
+    "No: 250, subtotal 250,000 + 10% tax = Total 275,000 JPY, Due Date 2026/05/08 "
+    "maps to:\n"
+    '{"is_invoice": true, "billed_to": "Yunison Pte Ltd", '
+    '"invoice_name": "Due Diligence Services (Down Payment)", '
+    '"company": "ATSUNORI TSUJIMURA CPA & CPTA", "invoice_number": "250", '
+    '"amount": "275,000 JPY", "payable_at": "2026/05/08", "link": ""}\n\n'
     "Respond with valid JSON only. No preamble. Exact shape:\n"
     '{"is_invoice": true, "billed_to": "", "invoice_name": "", "company": "", '
     '"invoice_number": "", "amount": "", "payable_at": "", "link": ""}'

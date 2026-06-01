@@ -2,13 +2,11 @@
   "thread_list": {
     "Benten DD discussion": ["Benten", "due diligence", "DD"],
     "Draft SPA": ["SPA", "share purchase agreement"],
-    "Moby": ["Moby"],
-    "Stock Analysis": ["Stock Analysis"]
+    "Financial Advisory Engagement Letter": ["advisory", "advice"]
   },
   "invoice_groups": {
-    "Accounting service for Benten": [
-      "remi0813.at@gmail.com",
-      "t-furukawa@oharalaw.jp"
-    ]
+    "Accounting services": ["remi0813.at@gmail.com"],
+    "Law services": ["t-furukawa@oharalaw.jp"],
+    "Incorporation services": ["no-reply@osome.com"]
   }
 }
