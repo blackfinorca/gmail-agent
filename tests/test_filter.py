@@ -39,9 +39,19 @@ def test_gmail_query_combines_subjects_and_senders():
     q = e.gmail_query()
     assert 'subject:"SPA"' in q
     assert 'subject:"share purchase"' in q
-    # invoice-sender clause requires a PDF attachment
-    assert "from:lawyer@firm.jp has:attachment filename:pdf" in q
+    # invoice-sender clause requires a PDF attachment, parenthesised so the
+    # has:attachment AND binds locally (not to the whole OR chain)
+    assert "(from:lawyer@firm.jp has:attachment filename:pdf)" in q
     assert " OR " in q
+
+
+def test_gmail_query_parenthesises_invoice_clauses():
+    # Regression: a bare `subject OR from:X has:attachment` chain made Gmail
+    # attachment-gate the whole query. Each invoice clause must be wrapped.
+    e = make({"T": ["spa"]}, {"G": ["a@x.com", "b@y.com"]})
+    q = e.gmail_query()
+    assert q.count("(from:") == 2
+    assert 'subject:"spa" OR (from:a@x.com has:attachment filename:pdf)' in q
 
 
 def test_gmail_query_empty_when_no_rules():
