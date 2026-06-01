@@ -55,5 +55,13 @@ def sender_detail(sender_email):
     return render_template("sender.html", sender=sender)
 
 
+@app.route("/invoices")
+def invoices():
+    rows = storage.get_all_invoices()
+    for r in rows:
+        r["sent_display"] = relative_time(r.get("sent_at", 0))
+    return render_template("invoices.html", invoices=rows, total=len(rows))
+
+
 if __name__ == "__main__":
     app.run(host="localhost", port=5050, debug=False)

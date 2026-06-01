@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="60">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoices — Gmail Intelligence Agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f1117; color: #c9d1d9;
+      font-family: 'Courier New', Courier, monospace; font-size: 14px;
+      padding: 24px; max-width: 1100px;
+    }
+    h1 { color: #58a6ff; font-size: 20px; margin-bottom: 4px; }
+    nav { margin: 12px 0 24px; display: flex; gap: 16px; }
+    nav a { color: #8b949e; text-decoration: none; padding-bottom: 4px; }
+    nav a:hover { color: #58a6ff; }
+    nav a.active { color: #c9d1d9; border-bottom: 2px solid #58a6ff; }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left; color: #8b949e; border-bottom: 1px solid #21262d;
+      padding: 8px 10px; font-weight: normal; text-transform: uppercase;
+      font-size: 11px; letter-spacing: 0.05em;
+    }
+    td { padding: 10px; border-bottom: 1px solid #161b22; vertical-align: top; }
+    tr:hover td { background: #161b22; }
+    .amount { color: #3fb950; white-space: nowrap; }
+    .num { color: #8b949e; }
+    a.link { color: #58a6ff; text-decoration: none; }
+    a.link:hover { text-decoration: underline; }
+    .meta { color: #8b949e; font-size: 12px; white-space: nowrap; }
+    .empty { text-align: center; color: #8b949e; padding: 60px 0; }
+  </style>
+</head>
+<body>
+  <h1>Invoices</h1>
+  <nav>
+    <a href="/">Emails</a>
+    <a href="/invoices" class="active">Invoices</a>
+  </nav>
+
+  {% if invoices %}
+  <table>
+    <thead>
+      <tr>
+        <th>Sender</th><th>For</th><th>Invoice</th><th>Company</th>
+        <th>No.</th><th>Amount</th><th>Sent</th><th>Payable</th><th>Link</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in invoices %}
+      <tr>
+        <td>{{ v.sender_email }}</td>
+        <td>{{ v.billed_to }}</td>
+        <td>{{ v.invoice_name }}</td>
+        <td>{{ v.company }}</td>
+        <td class="num">{{ v.invoice_number }}</td>
+        <td class="amount">{{ v.amount }}</td>
+        <td class="meta">{{ v.sent_display }}</td>
+        <td class="meta">{{ v.payable_at }}</td>
+        <td>{% if v.link %}<a class="link" href="{{ v.link }}" target="_blank" rel="noopener">view</a>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No invoices yet. The agent will populate this as invoice emails arrive.</div>
+  {% endif %}
+</body>
+</html>
