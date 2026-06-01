@@ -99,6 +99,59 @@ nohup python agent.py --with-dashboard > /dev/null 2>&1 &
 
 ---
 
+## Running 24/7 (macOS launchd)
+
+The agent self-loops every `POLL_INTERVAL_SECONDS` (set it to `900` for a
+15-minute cadence). To keep it alive across logins/crashes, run it as a
+**LaunchAgent**.
+
+`~/Library/LaunchAgents/com.yunison.email-agent.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.yunison.email-agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/ABSOLUTE/PATH/email-agent/.venv/bin/python</string>
+        <string>/ABSOLUTE/PATH/email-agent/agent.py</string>
+        <string>--with-dashboard</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/ABSOLUTE/PATH/email-agent</string>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>StandardOutPath</key>
+    <string>/ABSOLUTE/PATH/email-agent/agent.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/ABSOLUTE/PATH/email-agent/agent.launchd.log</string>
+</dict>
+</plist>
+```
+
+Use **absolute paths** (launchd has no shell/PATH); use `.venv/bin/python`
+directly (don't rely on an activated venv). Then:
+
+```bash
+launchctl load -w ~/Library/LaunchAgents/com.yunison.email-agent.plist   # start (+ at every login)
+launchctl list | grep email-agent                                        # status: PID, last exit code
+launchctl kickstart -k gui/$(id -u)/com.yunison.email-agent              # restart (after editing .env)
+launchctl unload ~/Library/LaunchAgents/com.yunison.email-agent.plist    # stop
+```
+
+- `RunAtLoad` starts it at login; `KeepAlive` restarts it if it crashes.
+- launchd's stdout/stderr → `agent.launchd.log`; the app's own rotating log →
+  `agent.log`.
+- **Sleep caveat:** launchd does **not** run while the Mac is asleep. It resumes
+  on wake (the default whole-mailbox scan catches up). For true round-the-clock,
+  prevent sleep (`caffeinate -s`, or Battery settings) or host on an always-on
+  machine.
+
+---
+
 ## Dashboard
 
 If you didn't start the agent with `--with-dashboard`, run it in a second

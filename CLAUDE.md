@@ -340,6 +340,7 @@ When the user asks to set the project up from a fresh clone:
 | Update rules without restart         | edit `rules.json`, then `python agent.py --reload-rules` |
 | Reset summaries (keep auth)          | delete `agent.db`; next run rebuilds from the full mailbox |
 | Inspect runs                         | `sqlite3 agent.db "select * from run_log order by run_at desc limit 20;"` |
+| Run 24/7, poll every 15 min          | set `POLL_INTERVAL_SECONDS=900`; run as a macOS LaunchAgent (`com.yunison.email-agent`, `RunAtLoad`+`KeepAlive`). See README "Running 24/7". Mac asleep = paused. |
 
 ---
 
