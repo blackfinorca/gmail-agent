@@ -87,6 +87,13 @@ class Agent:
         return message_id
 
     @staticmethod
+    def _has_pdf(msg: dict) -> bool:
+        """True if the message carries at least one PDF attachment."""
+        return any(
+            a.get("mime_type") == "application/pdf" for a in msg.get("attachments", [])
+        )
+
+    @staticmethod
     def _extract_attachment_text(gmail, msg: dict) -> str:
         """Download every PDF attachment (<=10MB) and return its extracted text."""
         parts = []
@@ -156,7 +163,9 @@ class Agent:
             thread_name = self.filter.thread_for(msg)
             if thread_name is not None:
                 thread_batches.setdefault(thread_name, []).append(msg)
-            if self.filter.invoice_group_for(msg) is not None:
+            # Invoices arrive as PDFs; only those get an LLM call (avoids
+            # classifying every newsletter/notification from a chatty sender).
+            if self.filter.invoice_group_for(msg) is not None and self._has_pdf(msg):
                 invoice_msgs.append(msg)
 
         messages_matched = sum(len(v) for v in thread_batches.values()) + len(invoice_msgs)

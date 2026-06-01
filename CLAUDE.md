@@ -176,11 +176,12 @@ clears it for a chosen window so the agent can rescan.
   or `None` if the subject matches no thread.
 - `invoice_group_for(msg)` — returns the **name** of the first `invoice_groups`
   group whose sender substring matches the `sender` field, or `None`.
-- `gmail_query()` — builds a Gmail search string (`subject:"kw" OR … OR from:addr`)
-  from the rules so the **server** returns only candidate messages. Without it a
-  default scan would download the entire mailbox just to filter locally. Note
-  Gmail subject matching is word-level, so it can be slightly tighter than the
-  local substring filter (which then makes the final call).
+- `gmail_query()` — builds a Gmail search string from the rules so the **server**
+  returns only candidate messages: thread keywords as `subject:"kw"`, and each
+  invoice sender as `from:addr has:attachment filename:pdf` (invoices are PDFs).
+  Without it a default scan would download the entire mailbox just to filter
+  locally. Gmail subject matching is word-level, so it can be slightly tighter
+  than the local substring filter (which makes the final call).
 
 ### `summariser.py`
 - Model: module-level `MODEL` constant = `os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")`;
@@ -235,10 +236,13 @@ clears it for a chosen window so the agent can rescan.
      - **Thread pipeline**: `thread_for(msg)` (subject keyword) → group messages
        by thread name → `update_sender_summary(batch)` → `upsert_thread_summary`
        (members = configured subject keywords) → `mark_processed`.
-     - **Invoice pipeline**: `invoice_group_for(msg)` → `_extract_attachment_text`
-       (download + `pdf_to_text` each PDF ≤10MB) → `extract_invoice(msg)` per
-       message → if `is_invoice`, compute `_invoice_key` and `upsert_invoice`
-       (tagged with the group name) → `mark_processed`.
+     - **Invoice pipeline**: a message is a candidate only if
+       `invoice_group_for(msg)` matches **and** `_has_pdf(msg)` (real invoices
+       are PDFs — this avoids an LLM call on every newsletter/notification from a
+       chatty sender). Then `_extract_attachment_text` (download + `pdf_to_text`
+       each PDF ≤10MB) → `extract_invoice(msg)` → if `is_invoice`, compute
+       `_invoice_key` and `upsert_invoice` (tagged with the group name) →
+       `mark_processed`.
   4. Append run stats to `run_log`.
 - `run_forever(with_dashboard, since_override)`:
   - Prints a startup banner (shows both `thread_list` and `invoice_groups`),
