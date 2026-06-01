@@ -12,8 +12,8 @@ load_dotenv()
 
 @dataclass
 class FilterRules:
-    sender_whitelist: list[str] = field(default_factory=list)
-    keywords: list[str] = field(default_factory=list)
+    thread_list: list[str] = field(default_factory=list)
+    invoice_senders: list[str] = field(default_factory=list)
     poll_interval_seconds: int = 300
     max_summary_tokens: int = 400
 
@@ -27,8 +27,8 @@ def load_config(rules_path: str = "rules.json") -> FilterRules:
         data = json.load(f)
 
     return FilterRules(
-        sender_whitelist=data.get("sender_whitelist", []),
-        keywords=data.get("keywords", []),
+        thread_list=data.get("thread_list", []),
+        invoice_senders=data.get("invoice_senders", []),
         poll_interval_seconds=int(os.getenv("POLL_INTERVAL_SECONDS", 300)),
         max_summary_tokens=int(os.getenv("MAX_SUMMARY_TOKENS", 400)),
     )
@@ -37,7 +37,7 @@ def load_config(rules_path: str = "rules.json") -> FilterRules:
 if __name__ == "__main__":
     config = load_config()
     print("Loaded FilterRules:")
-    print(f"  sender_whitelist : {config.sender_whitelist}")
-    print(f"  keywords         : {config.keywords}")
+    print(f"  thread_list      : {config.thread_list}")
+    print(f"  invoice_senders  : {config.invoice_senders}")
     print(f"  poll_interval    : {config.poll_interval_seconds}s")
     print(f"  max_summary_tokens: {config.max_summary_tokens}")
