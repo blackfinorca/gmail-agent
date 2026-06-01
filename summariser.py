@@ -44,6 +44,24 @@ SYSTEM_PROMPT = (
 "{{\"summary\": \"<h3>TL;DR</h3>...\", \"pending_action\": \"you\" | \"them\" | \"none\"}}"
 )
 
+INVOICE_SYSTEM_PROMPT = (
+    "You are an accounts-payable assistant. Decide whether the email below is an "
+    "invoice or a payment request, and if so extract its fields. If it is NOT an "
+    "invoice (newsletter, marketing, a plain receipt/confirmation with nothing due, "
+    "general correspondence), return is_invoice false and leave the other fields empty.\n\n"
+    "Extract:\n"
+    "- billed_to: the person or company the invoice is addressed to\n"
+    "- invoice_name: a short title or description of what the invoice is for\n"
+    "- company: the company issuing the invoice\n"
+    "- invoice_number: the invoice or reference number ('' if none)\n"
+    "- amount: total amount due, keep the currency symbol ('' if none)\n"
+    "- payable_at: the payment due date exactly as written ('' if none)\n"
+    "- link: the URL to view or pay the invoice from the email body ('' if none)\n\n"
+    "Respond with valid JSON only. No preamble. Exact shape:\n"
+    '{"is_invoice": true, "billed_to": "", "invoice_name": "", "company": "", '
+    '"invoice_number": "", "amount": "", "payable_at": "", "link": ""}'
+)
+
 USER_TEMPLATE = """\
 CURRENT SUMMARY:
 {existing_summary}
@@ -193,6 +211,52 @@ class Summariser:
         except (json.JSONDecodeError, KeyError) as e:
             logger.error("Failed to parse summariser response: %s | raw=%r", e, locals().get("raw", ""))
             return locals().get("raw", ""), "none"
+
+    def extract_invoice(self, message: dict) -> dict:
+        """Detect + extract a single invoice from one email.
+
+        Returns {"is_invoice": False} for non-invoices or parse failures,
+        otherwise a dict with the extracted string fields.
+        """
+        user = (
+            f"From: {message.get('sender', '')}\n"
+            f"Date: {message.get('date', '')}\n"
+            f"Subject: {message.get('subject', '')}\n"
+            "---\n"
+            f"{message.get('body_text', '') or message.get('snippet', '')}\n"
+            "---\n"
+            "Is this an invoice? If so, extract the fields."
+        )
+
+        try:
+            response = self.client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=self._api_max_tokens,
+                system=INVOICE_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user}],
+            )
+            raw = _extract_json(response.content[0].text)
+            data = json.loads(raw)
+        except anthropic.APIError as e:
+            logger.error("Anthropic API error (invoice): %s", e)
+            raise
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error("Failed to parse invoice response: %s | raw=%r", e, locals().get("raw", ""))
+            return {"is_invoice": False}
+
+        if not data.get("is_invoice"):
+            return {"is_invoice": False}
+
+        return {
+            "is_invoice": True,
+            "billed_to": (data.get("billed_to") or "").strip(),
+            "invoice_name": (data.get("invoice_name") or "").strip(),
+            "company": (data.get("company") or "").strip(),
+            "invoice_number": (data.get("invoice_number") or "").strip(),
+            "amount": (data.get("amount") or "").strip(),
+            "payable_at": (data.get("payable_at") or "").strip(),
+            "link": (data.get("link") or "").strip(),
+        }
 
 
 if __name__ == "__main__":
