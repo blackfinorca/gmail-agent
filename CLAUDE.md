@@ -147,11 +147,13 @@ clears it for a chosen window so the agent can rescan.
 ### `gmail_client.py`
 - `GmailClient.authenticate()` — token refresh, falls back to browser OAuth
   on first run. Scope: `gmail.readonly`.
-- `fetch_new_messages(since_ts, skip_ids=None)` — **paginates** `messages.list`
-  (the early versions only fetched the first 100; the current code walks
-  `nextPageToken` to completion), drops any listed id in `skip_ids`, then
-  `messages.get(format='full')` for each remaining. `skip_ids` (the processed
-  ledger) keeps the default whole-mailbox scan from re-downloading old mail.
+- `fetch_new_messages(since_ts, skip_ids=None, query_filter="")` — **paginates**
+  `messages.list` (the early versions only fetched the first 100; the current
+  code walks `nextPageToken` to completion), drops any listed id in `skip_ids`,
+  then `messages.get(format='full')` for each remaining. `query_filter` (from
+  `FilterEngine.gmail_query()`) is the **critical** server-side narrowing: without
+  it a `since=0` scan lists *and downloads* the whole mailbox (tens of thousands
+  of messages). `skip_ids` (the processed ledger) avoids re-downloading old mail.
 - `decode_body()` — prefers `text/plain`, strips quoted reply blocks.
 - `_collect_attachments(payload)` — walks the MIME tree, returns metadata
   `{filename, mime_type, attachment_id, size}` for every file part (added to
@@ -174,6 +176,11 @@ clears it for a chosen window so the agent can rescan.
   or `None` if the subject matches no thread.
 - `invoice_group_for(msg)` — returns the **name** of the first `invoice_groups`
   group whose sender substring matches the `sender` field, or `None`.
+- `gmail_query()` — builds a Gmail search string (`subject:"kw" OR … OR from:addr`)
+  from the rules so the **server** returns only candidate messages. Without it a
+  default scan would download the entire mailbox just to filter locally. Note
+  Gmail subject matching is word-level, so it can be slightly tighter than the
+  local substring filter (which then makes the final call).
 
 ### `summariser.py`
 - Model: module-level `MODEL` constant = `os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")`;
@@ -218,10 +225,11 @@ clears it for a chosen window so the agent can rescan.
 ### `agent.py`
 - `Agent.run_once(since_override=None)`:
   1. Determine `since`: **0 (whole mailbox) by default**, or the `--since`
-     override. The whole-mailbox listing stays cheap because
-     `fetch_new_messages` is passed `storage.get_processed_ids()` and skips
-     downloading anything already processed.
-  2. Fetch Gmail messages (all dates unless `--since` narrows it).
+     override. The scan stays cheap because the fetch is narrowed by
+     `FilterEngine.gmail_query()` (only subject/sender candidates) and skips
+     already-processed ids via `storage.get_processed_ids()`.
+  2. Fetch Gmail messages — server-side filtered to rule candidates, all dates
+     unless `--since` narrows it.
   3. Skip already-processed; route surviving messages into two pipelines
      (a message can hit both if it matches both lists):
      - **Thread pipeline**: `thread_for(msg)` (subject keyword) → group messages

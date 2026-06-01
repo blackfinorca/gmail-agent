@@ -32,3 +32,16 @@ def test_invoice_group_for_matches_sender():
     e = make({}, {"Accounting": ["billing@stripe.com"]})
     assert e.invoice_group_for({"sender": "Stripe <billing@stripe.com>"}) == "Accounting"
     assert e.invoice_group_for({"sender": "x@other.com"}) is None
+
+
+def test_gmail_query_combines_subjects_and_senders():
+    e = make({"Draft SPA": ["SPA", "share purchase"]}, {"Law": ["lawyer@firm.jp"]})
+    q = e.gmail_query()
+    assert 'subject:"SPA"' in q
+    assert 'subject:"share purchase"' in q
+    assert "from:lawyer@firm.jp" in q
+    assert " OR " in q
+
+
+def test_gmail_query_empty_when_no_rules():
+    assert make({}, {}).gmail_query() == ""
