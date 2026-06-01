@@ -43,8 +43,11 @@ class FilterEngine:
         for emails in self.rules.invoice_groups.values():
             for entry in emails:
                 # Invoices arrive as PDFs — require one server-side so we don't
-                # download/LLM-classify every email from a chatty sender.
-                clauses.append(f"from:{entry} has:attachment filename:pdf")
+                # download/LLM-classify every email from a chatty sender. MUST be
+                # parenthesised: in a bare `a OR b has:attachment` chain Gmail
+                # applies has:attachment to the whole query, starving subject
+                # (thread) matches.
+                clauses.append(f"(from:{entry} has:attachment filename:pdf)")
         return " OR ".join(clauses)
 
 
