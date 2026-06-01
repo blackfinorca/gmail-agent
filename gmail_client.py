@@ -57,10 +57,11 @@ class GmailClient:
         self.service = build("gmail", "v1", credentials=creds)
         logger.info("Gmail API authenticated.")
 
-    def fetch_new_messages(self, since_timestamp: int) -> list[dict]:
+    def fetch_new_messages(self, since_timestamp: int, skip_ids: set | None = None) -> list[dict]:
         if not self.service:
             self.authenticate()
 
+        skip_ids = skip_ids or set()
         query = f"after:{since_timestamp}"
         msg_refs = []
         page_token = None
@@ -81,7 +82,14 @@ class GmailClient:
             if not page_token:
                 break
 
-        logger.info("Found %d new message(s) since %d", len(msg_refs), since_timestamp)
+        listed = len(msg_refs)
+        # Skip messages we've already processed — avoids re-downloading the
+        # whole mailbox on every poll when since=0.
+        msg_refs = [r for r in msg_refs if r["id"] not in skip_ids]
+        logger.info(
+            "Listed %d message(s) since %d; %d new to fetch",
+            listed, since_timestamp, len(msg_refs),
+        )
 
         messages_out = []
         for ref in msg_refs:

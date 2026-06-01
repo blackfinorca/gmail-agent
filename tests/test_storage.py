@@ -30,6 +30,13 @@ def test_upsert_invoice_and_get(tmp_path):
     assert rows[0]["invoice_group"] == "Accounting"
 
 
+def test_get_processed_ids(tmp_path):
+    s = Storage(str(tmp_path / "t.db"))
+    s.mark_processed("m1", "t1")
+    s.mark_processed("m2", "t2")
+    assert s.get_processed_ids() == {"m1", "m2"}
+
+
 def test_get_all_invoices_grouped(tmp_path):
     s = Storage(str(tmp_path / "t.db"))
     s.upsert_invoice(**_invoice_kwargs(invoice_key="a", invoice_group="Benten"))

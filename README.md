@@ -86,11 +86,13 @@ python agent.py
 # Continuous + dashboard on http://localhost:5050
 python agent.py --with-dashboard
 
-# One poll, then exit (handy for cron or testing)
+# One poll, then exit (handy for cron or testing).
+# By default this scans the WHOLE mailbox; already-processed mail is
+# skipped before download, so it's cheap to repeat.
 python agent.py --once
 
-# Backfill / rescan the last N days (clears the processed-message cache
-# for that window so messages get re-ingested)
+# Optional: narrow to the last N days AND clear the processed-cache for
+# that window, forcing a re-ingest of those messages.
 python agent.py --once --since 7d     # also accepts 12h, 30m, etc.
 ```
 
@@ -165,10 +167,10 @@ are applied on the next poll cycle.
 
 | Command                                    | What it does |
 |--------------------------------------------|--------------|
-| `python agent.py`                          | Poll forever at `POLL_INTERVAL_SECONDS`. |
+| `python agent.py`                          | Poll forever at `POLL_INTERVAL_SECONDS`. Scans the whole mailbox each cycle (processed mail skipped). |
 | `python agent.py --once`                   | Single poll cycle then exit. |
 | `python agent.py --with-dashboard`         | Also start the Flask UI on :5050. |
-| `python agent.py --since 7d`               | Override the lookback window (also `12h`, `30m`). Clears processed-cache for that window. |
+| `python agent.py --since 7d`               | Optional: narrow the lookback (also `12h`, `30m`) and clear the processed-cache for that window. Default is all time. |
 | `python agent.py --reload-rules`           | Tell the running agent to re-read `rules.json`. |
 
 ---
@@ -233,8 +235,10 @@ After that initial run, every subsequent invocation is non-interactive.
 
 - **`re-auth needed` in the log** — delete `credentials/token.json` and run
   `python agent.py --once` to redo browser OAuth.
-- **No senders showing up** — confirm `rules.json` actually matches recent
-  mail. A `--since 7d` rescan is the fastest way to verify.
+- **Nothing showing up** — confirm `rules.json` keywords/senders actually match
+  your mail. The default run already scans the whole mailbox; if you previously
+  processed mail under different rules, `--since 30d` clears that window's cache
+  and forces a re-ingest.
 - **JSON parse errors from the summariser** — Claude occasionally wraps its
   response in ```` ```json ``` ```` fences; the code strips them, but if you
   see one slip through, the raw text is stored verbatim so the dashboard
