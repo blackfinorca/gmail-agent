@@ -12,11 +12,20 @@ MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 
 def _extract_json(text: str) -> str:
-    """Strip markdown code fences and return the bare JSON string."""
+    """Return the bare JSON string from a model reply.
+
+    Handles ```json fences and any prose the model adds before/after the
+    object (it sometimes ignores the 'no preamble' instruction)."""
     text = text.strip()
     # Remove ```json ... ``` or ``` ... ``` wrappers
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
+    text = text.strip()
+    # If prose surrounds the object, slice from the first { to the last }.
+    if not text.startswith("{"):
+        start, end = text.find("{"), text.rfind("}")
+        if start != -1 and end > start:
+            text = text[start:end + 1]
     return text.strip()
 
 SYSTEM_PROMPT = (

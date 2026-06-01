@@ -55,6 +55,20 @@ def test_extract_invoice_bad_json_returns_not_invoice():
     assert out["is_invoice"] is False
 
 
+def test_extract_invoice_parses_json_after_prose():
+    # Model ignores "no preamble" and writes a sentence before the JSON block.
+    s = _summariser(
+        'This is an invoice. Here are the fields:\n```json\n'
+        '{"is_invoice": true, "billed_to": "Yunison", "invoice_name": "FA fees", '
+        '"company": "Schuon", "invoice_number": "21", "amount": "627,000 JPY", '
+        '"payable_at": "", "link": ""}\n```'
+    )
+    out = s.extract_invoice({"sender": "x", "body_text": "y"})
+    assert out["is_invoice"] is True
+    assert out["invoice_number"] == "21"
+    assert out["amount"] == "627,000 JPY"
+
+
 def test_extract_invoice_includes_attachment_text():
     s = _summariser('{"is_invoice": false}')
     s.extract_invoice({
