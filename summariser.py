@@ -238,8 +238,15 @@ class Summariser:
             "---\n"
             f"{message.get('body_text', '') or message.get('snippet', '')}\n"
             "---\n"
-            "Is this an invoice? If so, extract the fields."
         )
+        attachments_text = message.get("attachments_text", "")
+        if attachments_text:
+            user += (
+                "ATTACHMENTS (text extracted from PDF files on this email — the "
+                "invoice itself is usually here):\n"
+                f"{attachments_text}\n---\n"
+            )
+        user += "Is this an invoice? If so, extract the fields."
 
         try:
             response = self.client.messages.create(

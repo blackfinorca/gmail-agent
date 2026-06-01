@@ -132,7 +132,40 @@ class GmailClient:
             "date": headers.get("date", ""),
             "body_text": self.decode_body(msg.get("payload", {})),
             "snippet": msg.get("snippet", ""),
+            "attachments": self._collect_attachments(msg.get("payload", {})),
         }
+
+    def _collect_attachments(self, payload: dict) -> list[dict]:
+        """Walk the MIME tree and return metadata for every file attachment."""
+        out = []
+        for part in payload.get("parts", []) or []:
+            filename = part.get("filename")
+            body = part.get("body", {})
+            if filename and body.get("attachmentId"):
+                out.append({
+                    "filename": filename,
+                    "mime_type": part.get("mimeType", ""),
+                    "attachment_id": body["attachmentId"],
+                    "size": body.get("size", 0),
+                })
+            if part.get("parts"):
+                out.extend(self._collect_attachments(part))
+        return out
+
+    def download_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        """Download and decode a single attachment's bytes."""
+        if not self.service:
+            self.authenticate()
+        att = (
+            self.service.users()
+            .messages()
+            .attachments()
+            .get(userId="me", messageId=message_id, id=attachment_id)
+            .execute()
+        )
+        data = att.get("data", "")
+        padded = data + "=" * (-len(data) % 4)
+        return base64.urlsafe_b64decode(padded)
 
     def decode_body(self, payload: dict) -> str:
         mime_type = payload.get("mimeType", "")

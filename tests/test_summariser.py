@@ -6,8 +6,10 @@ from summariser import Summariser
 class _FakeMessages:
     def __init__(self, text):
         self._text = text
+        self.last_kwargs = None
 
     def create(self, **kwargs):
+        self.last_kwargs = kwargs
         return types.SimpleNamespace(content=[types.SimpleNamespace(text=self._text)])
 
 
@@ -51,3 +53,14 @@ def test_extract_invoice_bad_json_returns_not_invoice():
     s = _summariser("this is not json")
     out = s.extract_invoice({"sender": "x", "body_text": "y"})
     assert out["is_invoice"] is False
+
+
+def test_extract_invoice_includes_attachment_text():
+    s = _summariser('{"is_invoice": false}')
+    s.extract_invoice({
+        "sender": "law@firm.jp", "body_text": "please find attached",
+        "attachments_text": "--- inv.pdf ---\nTotal Amount Due 500,000 JPY",
+    })
+    sent = s.client.messages.last_kwargs["messages"][0]["content"]
+    assert "ATTACHMENTS" in sent
+    assert "500,000 JPY" in sent
