@@ -44,13 +44,14 @@
   <table>
     <thead>
       <tr>
-        <th>Sender</th><th>For</th><th>Invoice</th><th>Company</th>
+        <th>Group</th><th>Sender</th><th>For</th><th>Invoice</th><th>Company</th>
         <th>No.</th><th>Amount</th><th>Sent</th><th>Payable</th><th>Link</th>
       </tr>
     </thead>
     <tbody>
       {% for v in invoices %}
       <tr>
+        <td>{{ v.invoice_group }}</td>
         <td>{{ v.sender_email }}</td>
         <td>{{ v.billed_to }}</td>
         <td>{{ v.invoice_name }}</td>

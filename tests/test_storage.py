@@ -6,6 +6,7 @@ def _invoice_kwargs(**overrides):
         invoice_key="4521|billing@v.com",
         message_id="m1",
         sender_email="billing@v.com",
+        invoice_group="Accounting",
         billed_to="Acme",
         invoice_name="March consulting",
         company="Vendor Co",
@@ -26,6 +27,18 @@ def test_upsert_invoice_and_get(tmp_path):
     assert len(rows) == 1
     assert rows[0]["invoice_number"] == "4521"
     assert rows[0]["amount"] == "$3,200"
+    assert rows[0]["invoice_group"] == "Accounting"
+
+
+def test_get_all_invoices_grouped(tmp_path):
+    s = Storage(str(tmp_path / "t.db"))
+    s.upsert_invoice(**_invoice_kwargs(invoice_key="a", invoice_group="Benten"))
+    s.upsert_invoice(**_invoice_kwargs(invoice_key="b", invoice_group="Benten"))
+    s.upsert_invoice(**_invoice_kwargs(invoice_key="c", invoice_group="Moby"))
+    grouped = s.get_all_invoices_grouped()
+    assert set(grouped) == {"Benten", "Moby"}
+    assert len(grouped["Benten"]) == 2
+    assert len(grouped["Moby"]) == 1
 
 
 def test_upsert_invoice_dedupes_on_key(tmp_path):

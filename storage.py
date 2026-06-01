@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     invoice_key     TEXT PRIMARY KEY,
     message_id      TEXT,
     sender_email    TEXT,
+    invoice_group   TEXT,
     billed_to       TEXT,
     invoice_name    TEXT,
     company         TEXT,
@@ -119,6 +120,7 @@ class Storage:
         invoice_key: str,
         message_id: str,
         sender_email: str,
+        invoice_group: str,
         billed_to: str,
         invoice_name: str,
         company: str,
@@ -133,12 +135,14 @@ class Storage:
             conn.execute(
                 """
                 INSERT INTO invoices
-                    (invoice_key, message_id, sender_email, billed_to, invoice_name,
-                     company, invoice_number, amount, sent_at, payable_at, link, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (invoice_key, message_id, sender_email, invoice_group, billed_to,
+                     invoice_name, company, invoice_number, amount, sent_at, payable_at,
+                     link, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(invoice_key) DO UPDATE SET
                     message_id     = excluded.message_id,
                     sender_email   = excluded.sender_email,
+                    invoice_group  = excluded.invoice_group,
                     billed_to      = excluded.billed_to,
                     invoice_name   = excluded.invoice_name,
                     company        = excluded.company,
@@ -148,9 +152,17 @@ class Storage:
                     payable_at     = excluded.payable_at,
                     link           = excluded.link
                 """,
-                (invoice_key, message_id, sender_email, billed_to, invoice_name,
-                 company, invoice_number, amount, sent_at, payable_at, link, now),
+                (invoice_key, message_id, sender_email, invoice_group, billed_to,
+                 invoice_name, company, invoice_number, amount, sent_at, payable_at,
+                 link, now),
             )
+
+    def get_all_invoices_grouped(self) -> dict[str, list[dict]]:
+        """All invoices keyed by invoice_group (preserves sent_at DESC order)."""
+        grouped: dict[str, list[dict]] = {}
+        for row in self.get_all_invoices():
+            grouped.setdefault(row.get("invoice_group") or "Ungrouped", []).append(row)
+        return grouped
 
     def get_all_invoices(self) -> list[dict]:
         with self._conn() as conn:
