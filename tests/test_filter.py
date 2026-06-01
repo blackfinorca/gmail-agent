@@ -39,7 +39,8 @@ def test_gmail_query_combines_subjects_and_senders():
     q = e.gmail_query()
     assert 'subject:"SPA"' in q
     assert 'subject:"share purchase"' in q
-    assert "from:lawyer@firm.jp" in q
+    # invoice-sender clause requires a PDF attachment
+    assert "from:lawyer@firm.jp has:attachment filename:pdf" in q
     assert " OR " in q
 
 

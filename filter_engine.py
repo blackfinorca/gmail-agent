@@ -42,7 +42,9 @@ class FilterEngine:
                 clauses.append(f'subject:"{kw}"')
         for emails in self.rules.invoice_groups.values():
             for entry in emails:
-                clauses.append(f"from:{entry}")
+                # Invoices arrive as PDFs — require one server-side so we don't
+                # download/LLM-classify every email from a chatty sender.
+                clauses.append(f"from:{entry} has:attachment filename:pdf")
         return " OR ".join(clauses)
 
 

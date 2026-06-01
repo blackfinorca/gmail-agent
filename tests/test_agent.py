@@ -59,3 +59,10 @@ def test_extract_attachment_text_skips_non_pdf_and_oversize(monkeypatch):
 
 def test_extract_attachment_text_no_attachments():
     assert Agent._extract_attachment_text(_FakeGmail(), {"id": "m1"}) == ""
+
+
+def test_has_pdf():
+    assert Agent._has_pdf({"attachments": [{"mime_type": "application/pdf"}]}) is True
+    assert Agent._has_pdf({"attachments": [{"mime_type": "image/jpeg"}]}) is False
+    assert Agent._has_pdf({"attachments": []}) is False
+    assert Agent._has_pdf({}) is False
