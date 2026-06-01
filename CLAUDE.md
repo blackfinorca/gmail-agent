@@ -19,13 +19,12 @@ A Python agent that polls Gmail on a schedule and routes messages through
    matches two threads is assigned to the first match.
 
 2. **Invoices pipeline** — `invoice_groups` is a map of **named group → list of
-   sender substrings**. Messages from a group's senders are scanned per-message.
-   Any **PDF attachments** (≤10MB) are downloaded and turned into text
-   (`attachments.pdf_to_text`: pdfplumber, OCR fallback for scans) and fed to
-   the model alongside the email body. the model detects whether each email is an
-   invoice and, if so, extracts structured fields (invoice number, amount, due
-   date, etc.) into a dedicated `invoices` table, tagged with its group name,
-   shown on a separate dashboard tab.
+   sender substrings**. A message is a candidate only if it's from a group's
+   sender **and has a PDF attachment**. The PDF bytes (≤10MB) are sent
+   **natively to a multimodal model** (`OPENAI_PDF_MODEL`) — no local OCR. The
+   model detects whether it's an invoice and, if so, extracts structured fields
+   (invoice number, amount, due date, etc.) into a dedicated `invoices` table,
+   tagged with its group name, shown on a separate dashboard tab.
 
 A single message can hit both pipelines simultaneously. A small Flask dashboard
 renders both tabs.
@@ -38,7 +37,7 @@ renders both tabs.
 |--------------|-------------------------------------|
 | Language     | Python 3.11+                        |
 | Gmail        | `google-api-python-client` (OAuth)  |
-| LLM          | `openai` SDK, `gpt-4o-mini` (env `OPENAI_MODEL`), JSON mode |
+| LLM          | `openai` SDK, JSON mode. Emails: `OPENAI_MODEL` (gpt-4o-mini, text). Invoices: `OPENAI_PDF_MODEL` (gpt-4o-mini, multimodal — reads the PDF natively) |
 | Scheduler    | `schedule` + `time.sleep`           |
 | Storage      | SQLite (single file, `agent.db`)    |
 | Config       | `.env` + `rules.json`               |
@@ -60,7 +59,6 @@ email-agent/
 │
 ├── config.py               ← loads .env + rules.json → FilterRules
 ├── gmail_client.py         ← OAuth + paginated fetch + attachment download
-├── attachments.py          ← PDF → text (pdfplumber, OCR fallback)
 ├── filter_engine.py        ← thread_for() / invoice_group_for()
 ├── summariser.py           ← OpenAI prompts, JSON-shaped responses
 ├── storage.py              ← SQLite: thread_summaries, invoices, processed_messages, run_log
@@ -161,15 +159,6 @@ clears it for a chosen window so the agent can rescan.
 - `download_attachment(message_id, attachment_id)` — fetches + base64url-decodes
   one attachment's bytes via the `attachments().get` endpoint.
 
-### `attachments.py`
-- `pdf_to_text(data: bytes) -> str` — digital text via `_pdfplumber_text`; if the
-  result is under `MIN_TEXT_CHARS` (scanned PDF), falls back to `_ocr_text`
-  (`pdf2image` + `pytesseract`). **Never raises** — returns `''` on total
-  failure. Heavy libs are imported lazily so the module loads without them.
-- OCR needs the `tesseract` and `poppler` **system binaries** (`brew install
-  tesseract poppler`). Without them, scanned PDFs yield `''` (logged), digital
-  PDFs still work.
-
 ### `filter_engine.py`
 - `thread_for(msg)` — returns the **name** of the first `thread_list` thread
   whose keyword (case-insensitive substring) appears in the message **subject**,
@@ -184,12 +173,17 @@ clears it for a chosen window so the agent can rescan.
   than the local substring filter (which makes the final call).
 
 ### `summariser.py`
-- Uses the **OpenAI** SDK. Model: module-level `MODEL` = `os.getenv("OPENAI_MODEL",
-  "gpt-4o-mini")`. All calls go through `Summariser._chat(system, user)`, which
-  uses Chat Completions with `response_format={"type": "json_object"}` (**JSON
-  mode** — guaranteed-valid JSON, so prose-wrapping is a non-issue).
-- `_extract_json()` is kept as a defensive fallback (strips fences / slices the
-  object) but JSON mode makes it mostly a no-op.
+- Uses the **OpenAI** SDK with **two clients**: `email_client` (key
+  `OPENAI_API_KEY_EMAILS`, model `MODEL`/`OPENAI_MODEL`) for summaries, and
+  `pdf_client` (key `OPENAI_API_KEY_PDF`, model `PDF_MODEL`/`OPENAI_PDF_MODEL`)
+  for invoices. `__init__(emails_api_key, pdf_api_key="", max_tokens=400)`.
+- All calls go through `_chat(client, model, system, user)` with
+  `response_format={"type": "json_object"}` (**JSON mode**). `user` may be a
+  string (summaries) or a list of content parts (multimodal invoice).
+- `extract_invoice(message, pdf_files=None)` — `pdf_files` is a list of
+  `(filename, bytes)`; each PDF is base64'd into a `{"type": "file", ...}`
+  content part and sent natively to the multimodal model. No local OCR.
+- `_extract_json()` is kept as a defensive fallback; JSON mode makes it a no-op.
 - `SYSTEM_PROMPT` uses `{max_tokens}` as a format placeholder, so the literal
   JSON braces in the prompt **must be escaped as `{{ }}`** — easy to break
   when editing. (See commit 332bde8.)
@@ -206,10 +200,10 @@ clears it for a chosen window so the agent can rescan.
     name is historical; it is key-agnostic). Returns
     `(summary: str, pending_action: str)`.
   - `summarise_thread(msgs)` — one-shot summarise a full thread.
-  - `extract_invoice(msg) -> dict` — **the invoice pipeline path**: sends one
-    message to the model with `INVOICE_SYSTEM_PROMPT`. Includes `msg["attachments_text"]`
-    (extracted PDF text) in the prompt when present. Returns `{"is_invoice": False}`
-    for non-invoices or JSON parse failures; otherwise returns a dict with
+  - `extract_invoice(msg, pdf_files=None) -> dict` — **the invoice pipeline
+    path**: sends the email context + each PDF (`(filename, bytes)`) natively to
+    the multimodal model with `INVOICE_SYSTEM_PROMPT`. Returns `{"is_invoice":
+    False}` for non-invoices or JSON parse failures; otherwise returns a dict with
     `is_invoice=True` and the extracted string fields (`billed_to`,
     `invoice_name`, `company`, `invoice_number`, `amount`, `payable_at`,
     `link`).
@@ -241,10 +235,10 @@ clears it for a chosen window so the agent can rescan.
      - **Invoice pipeline**: a message is a candidate only if
        `invoice_group_for(msg)` matches **and** `_has_pdf(msg)` (real invoices
        are PDFs — this avoids an LLM call on every newsletter/notification from a
-       chatty sender). Then `_extract_attachment_text` (download + `pdf_to_text`
-       each PDF ≤10MB) → `extract_invoice(msg)` → if `is_invoice`, compute
-       `_invoice_key` and `upsert_invoice` (tagged with the group name) →
-       `mark_processed`.
+       chatty sender). Then `_download_pdfs` (each PDF ≤10MB → `(filename,
+       bytes)`) → `extract_invoice(msg, pdf_files)` sends them to the multimodal
+       model → if `is_invoice`, compute `_invoice_key` and `upsert_invoice`
+       (tagged with the group name) → `mark_processed`.
   4. Append run stats to `run_log`.
 - `run_forever(with_dashboard, since_override)`:
   - Prints a startup banner (shows both `thread_list` and `invoice_groups`),
@@ -255,8 +249,8 @@ clears it for a chosen window so the agent can rescan.
 - Static helpers: `_extract_email()` splits the address out of `"Name <addr>"`
   headers; `_invoice_key(invoice_number, sender_email, message_id)` builds the
   invoice dedup key; `_parse_date_to_ts(date_str)` parses RFC-2822 Date headers
-  to unix timestamps; `_extract_attachment_text(gmail, msg)` downloads each PDF
-  attachment (≤`MAX_ATTACHMENT_BYTES`) and runs `pdf_to_text` on it.
+  to unix timestamps; `_download_pdfs(gmail, msg)` downloads each PDF attachment
+  (≤`MAX_ATTACHMENT_BYTES`) as `(filename, bytes)` for the multimodal model.
 
 ### CLI flags (`python agent.py …`)
 | Flag                  | Effect |
@@ -287,7 +281,7 @@ or skip the OAuth step.
 
 | Missing file | Tier | How to create it |
 |---|---|---|
-| `.env` | auto | Copy `.env.example` → `.env`. Leave secret values as the placeholder strings and tell the user which keys still need real values (at minimum `OPENAI_API_KEY`). Never invent or commit real keys. |
+| `.env` | auto | Copy `.env.example` → `.env`. Leave secret values as the placeholder strings and tell the user which keys still need real values (at minimum `OPENAI_API_KEY_EMAILS`). Never invent or commit real keys. |
 | `credentials/` (directory) | auto | `mkdir -p credentials` if missing. Also create `credentials/.gitkeep` if the directory is empty. |
 | `credentials/credentials.json` | **user-only** | OAuth client secret. Cannot be generated — the user must download it from Google Cloud Console (see README). If missing, stop and ask the user to provide it; do not stub it out. |
 | `credentials/token.json` | runtime | Auto-created by `gmail_client.GmailClient.authenticate()` on first run. Requires an interactive browser flow — only generated when the user runs `python agent.py --once` themselves. Do **not** try to run the OAuth flow non-interactively. |
@@ -304,7 +298,7 @@ When the user asks to set the project up from a fresh clone:
 2. `mkdir -p credentials` if absent.
 3. Check `credentials/credentials.json` exists. **If not, stop and ask the
    user** — they must download it from Google Cloud Console.
-4. Tell the user to fill in `OPENAI_API_KEY` in `.env`, then run
+4. Tell the user to fill in `OPENAI_API_KEY_EMAILS` (and `OPENAI_API_KEY_PDF`) in `.env`, then run
    `python agent.py --once` so the OAuth flow can write `token.json` and
    `storage.py` can create `agent.db`.
 5. Do not try to run the agent yourself before the user has done the OAuth
@@ -321,10 +315,9 @@ When the user asks to set the project up from a fresh clone:
   {"type": "json_object"}`), so replies are valid JSON objects. JSON mode
   requires the word "json" in the prompt — every prompt already says "valid
   JSON". `_extract_json()` remains as a defensive fallback.
-- **OCR system binaries**: scanned-PDF extraction needs `tesseract` + `poppler`
-  installed at the OS level (`brew install tesseract poppler`). They are NOT pip
-  packages. Missing → scanned invoices extract `''` (logged, not fatal); digital
-  PDFs still work via pdfplumber. `attachments.pdf_to_text` never raises.
+- **Invoice PDFs are read by the model**: PDF bytes are sent natively to the
+  multimodal model (`OPENAI_PDF_MODEL`), which handles both digital and scanned
+  PDFs — no local OCR / system binaries needed. ~1k tokens per 1-page PDF.
 - **Gmail pagination**: don't reintroduce a single `messages.list` call —
   it caps at 100. Loop on `nextPageToken`.
 - **Hot rule reload**: editing `rules.json` does NOT auto-pick up until the

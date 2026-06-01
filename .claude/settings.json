@@ -23,7 +23,31 @@
       "Bash(git push *)",
       "Bash(git branch *)",
       "Bash(python -m py_compile agent.py config.py filter_engine.py storage.py dashboard/app.py)",
-      "Bash(python filter_engine.py)"
+      "Bash(python filter_engine.py)",
+      "Bash(git -C \"/Users/michalpolak/Desktop/Blackfin Orca/Coding/email-agent\" diff main...feat/named-threads)",
+      "Read(//Users/michalpolak/Desktop/Blackfin\\\\ Orca/Coding/email-agent/**)",
+      "Bash(git stash *)",
+      "Bash(python -m py_compile summariser.py)",
+      "Bash(python -m pytest -q tests/test_summariser.py)",
+      "Bash(git -C \"/Users/michalpolak/Desktop/Blackfin Orca/Coding/email-agent\" diff main...feat/attachment-reading)",
+      "Bash(python3)",
+      "Bash(sqlite3 agent.db \"PRAGMA table_info\\(invoices\\);\")",
+      "Bash(sqlite3 agent.db \".tables\")",
+      "Bash(python -)",
+      "Bash(python -c ' *)",
+      "Bash(brew install *)",
+      "Bash(python -m py_compile filter_engine.py gmail_client.py agent.py)",
+      "Bash(git -C \"/Users/michalpolak/Desktop/Blackfin Orca/Coding/email-agent\" diff main...feat/server-side-filter)",
+      "Bash(tail -30 \"/private/tmp/claude-501/-Users-michalpolak-Desktop-Blackfin-Orca-Coding-email-agent/4f95d2e6-500a-48b6-bcf1-f9c44c4de7ac/tasks/bavmkw4zp.output\")",
+      "Bash(sqlite3 agent.db \"select 'processed='||count\\(*\\) from processed_messages; select 'threads='||count\\(*\\) from thread_summaries; select 'invoices='||count\\(*\\) from invoices;\")",
+      "Bash(sqlite3 -header -column agent.db \"select thread_name, message_count, pending_action from thread_summaries;\")",
+      "Bash(sqlite3 -header -column agent.db \"select invoice_group, company, invoice_number, amount, payable_at from invoices;\")",
+      "Bash(.venv/bin/python --version)",
+      "Bash(.venv/bin/python -c \"import sys; print\\(sys.executable\\)\")",
+      "Bash(sqlite3 -header -column agent.db \"select invoice_group as grp, company, invoice_number as num, amount, payable_at as due, sender_email as sender from invoices order by sent_at;\")",
+      "Bash(sqlite3 agent.db \"select count\\(*\\)||' invoices' from invoices; select count\\(*\\)||' threads' from thread_summaries;\")",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(.venv/bin/python -m py_compile summariser.py agent.py)"
     ]
   }
 }
