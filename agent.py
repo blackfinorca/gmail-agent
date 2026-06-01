@@ -11,11 +11,14 @@ from typing import Optional
 import schedule
 from dotenv import load_dotenv
 
+from attachments import pdf_to_text
 from config import load_config
 from filter_engine import FilterEngine
 from gmail_client import GmailClient
 from storage import Storage
 from summariser import Summariser
+
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 load_dotenv()
 
@@ -82,6 +85,27 @@ class Agent:
         if num:
             return f"{num}|{sender_email}"
         return message_id
+
+    @staticmethod
+    def _extract_attachment_text(gmail, msg: dict) -> str:
+        """Download every PDF attachment (<=10MB) and return its extracted text."""
+        parts = []
+        for att in msg.get("attachments", []):
+            if att.get("mime_type") != "application/pdf":
+                continue
+            if att.get("size", 0) and att["size"] > MAX_ATTACHMENT_BYTES:
+                logger.info("Skipping large attachment %s (%d bytes)", att["filename"], att["size"])
+                continue
+            try:
+                data = gmail.download_attachment(msg["id"], att["attachment_id"])
+                text = pdf_to_text(data)
+                if text:
+                    parts.append(f"--- {att['filename']} ---\n{text}")
+                else:
+                    logger.info("No text extracted from attachment %s", att["filename"])
+            except Exception as e:
+                logger.error("Failed to read attachment %s: %s", att.get("filename"), e)
+        return "\n\n".join(parts)
 
     @staticmethod
     def _parse_date_to_ts(date_str: str) -> int:
@@ -165,6 +189,7 @@ class Agent:
             sender_email = self._extract_email(msg["sender"])
             group = self.filter.invoice_group_for(msg) or ""
             try:
+                msg = {**msg, "attachments_text": self._extract_attachment_text(self.gmail, msg)}
                 data = self.summariser.extract_invoice(msg)
                 llm_calls += 1
                 self.storage.mark_processed(msg["id"], msg["thread_id"])

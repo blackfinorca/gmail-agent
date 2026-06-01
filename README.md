@@ -23,6 +23,17 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+**Optional — OCR for scanned-PDF invoices.** The Invoices pipeline reads PDF
+attachments. Digital PDFs work out of the box (pdfplumber); **scanned/image
+PDFs** additionally need the Tesseract + Poppler system binaries:
+
+```bash
+brew install tesseract poppler        # macOS
+# sudo apt-get install tesseract-ocr poppler-utils   # Debian/Ubuntu
+```
+
+Without them, scanned invoices simply extract no text (logged, not fatal).
+
 ### 2. Configure environment
 
 ```bash

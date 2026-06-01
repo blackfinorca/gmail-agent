@@ -19,11 +19,13 @@ A Python agent that polls Gmail on a schedule and routes messages through
    matches two threads is assigned to the first match.
 
 2. **Invoices pipeline** — `invoice_groups` is a map of **named group → list of
-   sender substrings**. Messages from a group's senders are scanned per-message;
-   Claude detects whether each email is an invoice and, if so, extracts
-   structured fields (invoice number, amount, due date, etc.) into a dedicated
-   `invoices` table, tagged with its group name, shown on a separate dashboard
-   tab.
+   sender substrings**. Messages from a group's senders are scanned per-message.
+   Any **PDF attachments** (≤10MB) are downloaded and turned into text
+   (`attachments.pdf_to_text`: pdfplumber, OCR fallback for scans) and fed to
+   Claude alongside the email body. Claude detects whether each email is an
+   invoice and, if so, extracts structured fields (invoice number, amount, due
+   date, etc.) into a dedicated `invoices` table, tagged with its group name,
+   shown on a separate dashboard tab.
 
 A single message can hit both pipelines simultaneously. A small Flask dashboard
 renders both tabs.
@@ -57,7 +59,8 @@ email-agent/
 ├── rules.json              ← editable filter rules: thread_list + invoice_groups (hot-reloadable)
 │
 ├── config.py               ← loads .env + rules.json → FilterRules
-├── gmail_client.py         ← OAuth + paginated message fetch
+├── gmail_client.py         ← OAuth + paginated fetch + attachment download
+├── attachments.py          ← PDF → text (pdfplumber, OCR fallback)
 ├── filter_engine.py        ← thread_for() / invoice_group_for()
 ├── summariser.py           ← Claude prompts, JSON-shaped responses
 ├── storage.py              ← SQLite: thread_summaries, invoices, processed_messages, run_log
@@ -148,6 +151,20 @@ clears it for a chosen window so the agent can rescan.
   versions only fetched the first 100; the current code walks `nextPageToken`
   to completion), then `messages.get(format='full')` for each.
 - `decode_body()` — prefers `text/plain`, strips quoted reply blocks.
+- `_collect_attachments(payload)` — walks the MIME tree, returns metadata
+  `{filename, mime_type, attachment_id, size}` for every file part (added to
+  each parsed message under `"attachments"`).
+- `download_attachment(message_id, attachment_id)` — fetches + base64url-decodes
+  one attachment's bytes via the `attachments().get` endpoint.
+
+### `attachments.py`
+- `pdf_to_text(data: bytes) -> str` — digital text via `_pdfplumber_text`; if the
+  result is under `MIN_TEXT_CHARS` (scanned PDF), falls back to `_ocr_text`
+  (`pdf2image` + `pytesseract`). **Never raises** — returns `''` on total
+  failure. Heavy libs are imported lazily so the module loads without them.
+- OCR needs the `tesseract` and `poppler` **system binaries** (`brew install
+  tesseract poppler`). Without them, scanned PDFs yield `''` (logged), digital
+  PDFs still work.
 
 ### `filter_engine.py`
 - `thread_for(msg)` — returns the **name** of the first `thread_list` thread
@@ -177,7 +194,8 @@ clears it for a chosen window so the agent can rescan.
     `(summary: str, pending_action: str)`.
   - `summarise_thread(msgs)` — one-shot summarise a full thread.
   - `extract_invoice(msg) -> dict` — **the invoice pipeline path**: sends one
-    message to Claude with `INVOICE_SYSTEM_PROMPT`. Returns `{"is_invoice": False}`
+    message to Claude with `INVOICE_SYSTEM_PROMPT`. Includes `msg["attachments_text"]`
+    (extracted PDF text) in the prompt when present. Returns `{"is_invoice": False}`
     for non-invoices or JSON parse failures; otherwise returns a dict with
     `is_invoice=True` and the extracted string fields (`billed_to`,
     `invoice_name`, `company`, `invoice_number`, `amount`, `payable_at`,
@@ -202,9 +220,10 @@ clears it for a chosen window so the agent can rescan.
      - **Thread pipeline**: `thread_for(msg)` (subject keyword) → group messages
        by thread name → `update_sender_summary(batch)` → `upsert_thread_summary`
        (members = configured subject keywords) → `mark_processed`.
-     - **Invoice pipeline**: `invoice_group_for(msg)` → `extract_invoice(msg)`
-       per message → if `is_invoice`, compute `_invoice_key` and
-       `upsert_invoice` (tagged with the group name) → `mark_processed`.
+     - **Invoice pipeline**: `invoice_group_for(msg)` → `_extract_attachment_text`
+       (download + `pdf_to_text` each PDF ≤10MB) → `extract_invoice(msg)` per
+       message → if `is_invoice`, compute `_invoice_key` and `upsert_invoice`
+       (tagged with the group name) → `mark_processed`.
   4. Append run stats to `run_log`.
 - `run_forever(with_dashboard, since_override)`:
   - Prints a startup banner (shows both `thread_list` and `invoice_groups`),
@@ -212,10 +231,11 @@ clears it for a chosen window so the agent can rescan.
   - Optionally starts the Flask dashboard in a daemon thread.
   - Installs a `SIGUSR1` handler that flips `_pending_reload` so rules can
     be re-read mid-loop without a restart.
-- Three static helpers: `_extract_email()` splits the address out of
-  `"Name <addr>"` headers; `_invoice_key(invoice_number, sender_email,
-  message_id)` builds the invoice dedup key; `_parse_date_to_ts(date_str)`
-  parses RFC-2822 Date headers to unix timestamps.
+- Static helpers: `_extract_email()` splits the address out of `"Name <addr>"`
+  headers; `_invoice_key(invoice_number, sender_email, message_id)` builds the
+  invoice dedup key; `_parse_date_to_ts(date_str)` parses RFC-2822 Date headers
+  to unix timestamps; `_extract_attachment_text(gmail, msg)` downloads each PDF
+  attachment (≤`MAX_ATTACHMENT_BYTES`) and runs `pdf_to_text` on it.
 
 ### CLI flags (`python agent.py …`)
 | Flag                  | Effect |
@@ -279,6 +299,10 @@ When the user asks to set the project up from a fresh clone:
 - **Markdown fences from Claude**: occasionally the model wraps its JSON in
   ```` ```json … ``` ````. `_extract_json()` strips this; do not remove that
   helper.
+- **OCR system binaries**: scanned-PDF extraction needs `tesseract` + `poppler`
+  installed at the OS level (`brew install tesseract poppler`). They are NOT pip
+  packages. Missing → scanned invoices extract `''` (logged, not fatal); digital
+  PDFs still work via pdfplumber. `attachments.pdf_to_text` never raises.
 - **Gmail pagination**: don't reintroduce a single `messages.list` call —
   it caps at 100. Loop on `nextPageToken`.
 - **Hot rule reload**: editing `rules.json` does NOT auto-pick up until the
