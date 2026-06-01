@@ -134,7 +134,9 @@ class Agent:
 
         try:
             messages = self.gmail.fetch_new_messages(
-                since, skip_ids=self.storage.get_processed_ids()
+                since,
+                skip_ids=self.storage.get_processed_ids(),
+                query_filter=self.filter.gmail_query(),
             )
         except Exception as e:
             logger.error("Failed to fetch messages: %s", e)

@@ -31,6 +31,20 @@ class FilterEngine:
                     return name
         return None
 
+    def gmail_query(self) -> str:
+        """Build a Gmail search query so the server returns only candidate
+        messages (thread subject keywords OR invoice-group senders), instead of
+        downloading the whole mailbox to filter locally. Empty string if no
+        rules are configured."""
+        clauses = []
+        for keywords in self.rules.thread_list.values():
+            for kw in keywords:
+                clauses.append(f'subject:"{kw}"')
+        for emails in self.rules.invoice_groups.values():
+            for entry in emails:
+                clauses.append(f"from:{entry}")
+        return " OR ".join(clauses)
+
 
 if __name__ == "__main__":
     rules = FilterRules(

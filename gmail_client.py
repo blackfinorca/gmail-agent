@@ -57,19 +57,35 @@ class GmailClient:
         self.service = build("gmail", "v1", credentials=creds)
         logger.info("Gmail API authenticated.")
 
-    def fetch_new_messages(self, since_timestamp: int, skip_ids: set | None = None) -> list[dict]:
+    def fetch_new_messages(
+        self,
+        since_timestamp: int,
+        skip_ids: set | None = None,
+        query_filter: str = "",
+    ) -> list[dict]:
         if not self.service:
             self.authenticate()
 
         skip_ids = skip_ids or set()
-        query = f"after:{since_timestamp}"
+        # Build the server-side query. `query_filter` narrows to candidate
+        # messages (subject/sender rules) so we don't download the whole
+        # mailbox. Gmail's `after:0` returns NOTHING, so only apply `after:`
+        # for a real (>0) timestamp.
+        parts = []
+        if since_timestamp and since_timestamp > 0:
+            parts.append(f"after:{since_timestamp}")
+        if query_filter:
+            parts.append(f"({query_filter})")
+        query = " ".join(parts)
         msg_refs = []
         page_token = None
 
         # Paginate through all results
         while True:
             try:
-                kwargs = {"userId": "me", "q": query, "maxResults": 500}
+                kwargs = {"userId": "me", "maxResults": 500}
+                if query:
+                    kwargs["q"] = query
                 if page_token:
                     kwargs["pageToken"] = page_token
                 response = self.service.users().messages().list(**kwargs).execute()
