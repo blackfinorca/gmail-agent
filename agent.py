@@ -59,11 +59,11 @@ class Agent:
         self.config = load_config()
         self.filter = FilterEngine(self.config)
         logger.info(
-            "Rules reloaded — %d senders, %d keywords",
-            len(self.config.sender_whitelist),
-            len(self.config.keywords),
+            "Rules reloaded — %d thread senders, %d invoice senders",
+            len(self.config.thread_list),
+            len(self.config.invoice_senders),
         )
-        print(f"  Rules reloaded: senders={self.config.sender_whitelist}  keywords={self.config.keywords}")
+        print(f"  Rules reloaded: thread_list={self.config.thread_list}  invoice_senders={self.config.invoice_senders}")
 
     def _handle_sigusr1(self, signum, frame):
         self._pending_reload = True
