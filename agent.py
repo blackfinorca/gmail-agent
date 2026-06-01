@@ -11,7 +11,6 @@ from typing import Optional
 import schedule
 from dotenv import load_dotenv
 
-from attachments import pdf_to_text
 from config import load_config
 from filter_engine import FilterEngine
 from gmail_client import GmailClient
@@ -47,14 +46,17 @@ class Agent:
         self.config = load_config()
         self.db_path = os.getenv("DB_PATH", "./agent.db")
         self.credentials_dir = os.getenv("CREDENTIALS_DIR", "./credentials")
-        self.api_key = os.getenv("OPENAI_API_KEY", "")
+        self.emails_api_key = os.getenv("OPENAI_API_KEY_EMAILS", "")
+        self.pdf_api_key = os.getenv("OPENAI_API_KEY_PDF", "")
 
         self.storage = Storage(self.db_path)
         self.gmail = GmailClient(credentials_dir=self.credentials_dir)
         self.gmail.authenticate()
         self.filter = FilterEngine(self.config)
         self.summariser = Summariser(
-            api_key=self.api_key, max_tokens=self.config.max_summary_tokens
+            emails_api_key=self.emails_api_key,
+            pdf_api_key=self.pdf_api_key,
+            max_tokens=self.config.max_summary_tokens,
         )
         self._pending_reload = False
 
@@ -94,9 +96,10 @@ class Agent:
         )
 
     @staticmethod
-    def _extract_attachment_text(gmail, msg: dict) -> str:
-        """Download every PDF attachment (<=10MB) and return its extracted text."""
-        parts = []
+    def _download_pdfs(gmail, msg: dict) -> list:
+        """Download every PDF attachment (<=10MB) as (filename, bytes) tuples,
+        to hand to the multimodal model."""
+        out = []
         for att in msg.get("attachments", []):
             if att.get("mime_type") != "application/pdf":
                 continue
@@ -105,14 +108,10 @@ class Agent:
                 continue
             try:
                 data = gmail.download_attachment(msg["id"], att["attachment_id"])
-                text = pdf_to_text(data)
-                if text:
-                    parts.append(f"--- {att['filename']} ---\n{text}")
-                else:
-                    logger.info("No text extracted from attachment %s", att["filename"])
+                out.append((att["filename"], data))
             except Exception as e:
-                logger.error("Failed to read attachment %s: %s", att.get("filename"), e)
-        return "\n\n".join(parts)
+                logger.error("Failed to download attachment %s: %s", att.get("filename"), e)
+        return out
 
     @staticmethod
     def _parse_date_to_ts(date_str: str) -> int:
@@ -205,8 +204,8 @@ class Agent:
             sender_email = self._extract_email(msg["sender"])
             group = self.filter.invoice_group_for(msg) or ""
             try:
-                msg = {**msg, "attachments_text": self._extract_attachment_text(self.gmail, msg)}
-                data = self.summariser.extract_invoice(msg)
+                pdf_files = self._download_pdfs(self.gmail, msg)
+                data = self.summariser.extract_invoice(msg, pdf_files)
                 llm_calls += 1
                 self.storage.mark_processed(msg["id"], msg["thread_id"])
 

@@ -21,8 +21,10 @@ class _FakeClient:
 
 
 def _summariser(text):
-    s = Summariser(api_key="test-key", max_tokens=400)
-    s.client = _FakeClient(text)
+    s = Summariser(emails_api_key="test-key", max_tokens=400)
+    # Same canned client for both paths so either can be inspected.
+    s.email_client = _FakeClient(text)
+    s.pdf_client = _FakeClient(text)
     return s
 
 
@@ -32,11 +34,29 @@ def test_extract_invoice_parses_fields():
         '"company": "Vendor Co", "invoice_number": "4521", "amount": "$3,200", '
         '"payable_at": "15 April 2026", "link": "https://pay.example.com/4521"}'
     )
-    out = s.extract_invoice({"sender": "billing@v.com", "date": "", "subject": "Invoice 4521", "body_text": "..."})
+    out = s.extract_invoice(
+        {"sender": "billing@v.com", "date": "", "subject": "Invoice 4521", "body_text": "..."},
+        pdf_files=[("inv.pdf", b"%PDF-bytes")],
+    )
     assert out["is_invoice"] is True
     assert out["invoice_number"] == "4521"
     assert out["amount"] == "$3,200"
     assert out["link"] == "https://pay.example.com/4521"
+
+
+def test_extract_invoice_sends_pdf_as_file_part():
+    s = _summariser('{"is_invoice": false}')
+    s.extract_invoice(
+        {"sender": "law@firm.jp", "body_text": "please find attached"},
+        pdf_files=[("inv.pdf", b"%PDF-1.4 data")],
+    )
+    content = s.pdf_client.chat.completions.last_kwargs["messages"][1]["content"]
+    # content is a list: a text part + one file part per PDF
+    kinds = [part["type"] for part in content]
+    assert "text" in kinds and "file" in kinds
+    file_part = next(p for p in content if p["type"] == "file")
+    assert file_part["file"]["filename"] == "inv.pdf"
+    assert file_part["file"]["file_data"].startswith("data:application/pdf;base64,")
 
 
 def test_extract_invoice_non_invoice():
@@ -71,13 +91,9 @@ def test_extract_invoice_parses_json_after_prose():
     assert out["amount"] == "627,000 JPY"
 
 
-def test_extract_invoice_includes_attachment_text():
-    s = _summariser('{"is_invoice": false}')
-    s.extract_invoice({
-        "sender": "law@firm.jp", "body_text": "please find attached",
-        "attachments_text": "--- inv.pdf ---\nTotal Amount Due 500,000 JPY",
-    })
-    # messages[0]=system, messages[1]=user (where the attachment text goes)
-    sent = s.client.chat.completions.last_kwargs["messages"][1]["content"]
-    assert "ATTACHMENTS" in sent
-    assert "500,000 JPY" in sent
+def test_summary_uses_email_client():
+    s = _summariser('{"summary": "<h3>TL;DR</h3> ok", "pending_action": "you"}')
+    summary, pa = s.update_sender_summary("", [{"sender": "a@b.com", "subject": "hi", "body_text": "x"}])
+    assert pa == "you"
+    assert "TL;DR" in summary
+    assert s.email_client.chat.completions.last_kwargs is not None

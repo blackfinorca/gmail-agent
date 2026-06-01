@@ -1,6 +1,5 @@
 from email.utils import parsedate_to_datetime
 
-import agent as agent_mod
 from agent import Agent
 
 
@@ -32,33 +31,29 @@ def test_parse_date_to_ts_invalid_falls_back():
     assert isinstance(ts, int) and ts > 0
 
 
-def test_extract_attachment_text_reads_pdfs(monkeypatch):
-    monkeypatch.setattr(agent_mod, "pdf_to_text", lambda data: "Total Amount Due 500,000 JPY")
+def test_download_pdfs_returns_filename_bytes():
     gmail = _FakeGmail()
     msg = {"id": "m1", "attachments": [
         {"filename": "inv.pdf", "mime_type": "application/pdf", "attachment_id": "a1", "size": 1000},
     ]}
-    out = Agent._extract_attachment_text(gmail, msg)
-    assert "inv.pdf" in out
-    assert "500,000" in out
+    out = Agent._download_pdfs(gmail, msg)
+    assert out == [("inv.pdf", b"%PDF-bytes")]
     assert gmail.downloaded == [("m1", "a1")]
 
 
-def test_extract_attachment_text_skips_non_pdf_and_oversize(monkeypatch):
-    monkeypatch.setattr(agent_mod, "pdf_to_text", lambda data: "SHOULD NOT APPEAR")
+def test_download_pdfs_skips_non_pdf_and_oversize():
     gmail = _FakeGmail()
     msg = {"id": "m1", "attachments": [
         {"filename": "pic.png", "mime_type": "image/png", "attachment_id": "a1", "size": 1000},
         {"filename": "big.pdf", "mime_type": "application/pdf", "attachment_id": "a2",
          "size": 20 * 1024 * 1024},
     ]}
-    out = Agent._extract_attachment_text(gmail, msg)
-    assert out == ""
+    assert Agent._download_pdfs(gmail, msg) == []
     assert gmail.downloaded == []  # nothing downloaded
 
 
-def test_extract_attachment_text_no_attachments():
-    assert Agent._extract_attachment_text(_FakeGmail(), {"id": "m1"}) == ""
+def test_download_pdfs_no_attachments():
+    assert Agent._download_pdfs(_FakeGmail(), {"id": "m1"}) == []
 
 
 def test_has_pdf():

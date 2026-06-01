@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import os
@@ -7,8 +8,10 @@ from openai import OpenAI, OpenAIError
 
 logger = logging.getLogger(__name__)
 
-# Override with OPENAI_MODEL in .env. gpt-4o-mini is ~$0.15/M in, $0.60/M out.
+# Text model for email summaries. Override with OPENAI_MODEL.
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# Multimodal model for invoice PDFs (reads the PDF natively). Override with OPENAI_PDF_MODEL.
+PDF_MODEL = os.getenv("OPENAI_PDF_MODEL", "gpt-4o-mini")
 
 
 def _extract_json(text: str) -> str:
@@ -105,16 +108,19 @@ Update the summary and determine whose action is pending.\
 
 
 class Summariser:
-    def __init__(self, api_key: str, max_tokens: int = 400):
-        self.client = OpenAI(api_key=api_key)
+    def __init__(self, emails_api_key: str, pdf_api_key: str = "", max_tokens: int = 400):
+        # Separate keys/clients: text summaries vs multimodal invoice PDFs.
+        self.email_client = OpenAI(api_key=emails_api_key)
+        self.pdf_client = OpenAI(api_key=pdf_api_key or emails_api_key)
         self.max_tokens = max_tokens          # word-count hint in prompt
         self._api_max_tokens = max(1200, max_tokens * 3)  # actual API response budget
 
-    def _chat(self, system: str, user: str) -> str:
-        """One JSON-mode chat call. Returns the raw response content string.
+    def _chat(self, client, model: str, system: str, user) -> str:
+        """One JSON-mode chat call. `user` is a string or a list of content
+        parts (for multimodal). Returns the raw response content string.
         Raises OpenAIError on API failure (caller decides what to do)."""
-        response = self.client.chat.completions.create(
-            model=MODEL,
+        response = client.chat.completions.create(
+            model=model,
             max_tokens=self._api_max_tokens,
             response_format={"type": "json_object"},
             messages=[
@@ -127,7 +133,7 @@ class Summariser:
     def _summarise(self, system: str, user: str) -> tuple:
         """Run a summary call and return (summary, pending_action)."""
         try:
-            raw = _extract_json(self._chat(system, user))
+            raw = _extract_json(self._chat(self.email_client, MODEL, system, user))
             data = json.loads(raw)
             summary = (data.get("summary") or "").strip()
             pending_action = data.get("pending_action", "none")
@@ -209,31 +215,37 @@ class Summariser:
         user = f"FULL THREAD:\n\n{thread_text}\nSummarise this thread and determine whose action is pending."
         return self._summarise(system, user)
 
-    def extract_invoice(self, message: dict) -> dict:
+    def extract_invoice(self, message: dict, pdf_files: list = None) -> dict:
         """Detect + extract a single invoice from one email.
 
-        Returns {"is_invoice": False} for non-invoices or parse failures,
+        `pdf_files` is a list of (filename, bytes) for the email's PDF
+        attachments; each is sent to the multimodal model natively (no local
+        OCR). Returns {"is_invoice": False} for non-invoices or parse failures,
         otherwise a dict with the extracted string fields.
         """
-        user = (
+        text = (
             f"From: {message.get('sender', '')}\n"
             f"Date: {message.get('date', '')}\n"
             f"Subject: {message.get('subject', '')}\n"
             "---\n"
             f"{message.get('body_text', '') or message.get('snippet', '')}\n"
             "---\n"
+            "The invoice is in the attached PDF(s). Is this an invoice? "
+            "If so, extract the fields."
         )
-        attachments_text = message.get("attachments_text", "")
-        if attachments_text:
-            user += (
-                "ATTACHMENTS (text extracted from PDF files on this email — the "
-                "invoice itself is usually here):\n"
-                f"{attachments_text}\n---\n"
-            )
-        user += "Is this an invoice? If so, extract the fields."
+        content = [{"type": "text", "text": text}]
+        for filename, data in (pdf_files or []):
+            b64 = base64.standard_b64encode(data).decode()
+            content.append({
+                "type": "file",
+                "file": {"filename": filename,
+                         "file_data": f"data:application/pdf;base64,{b64}"},
+            })
 
         try:
-            raw = _extract_json(self._chat(INVOICE_SYSTEM_PROMPT, user))
+            raw = _extract_json(
+                self._chat(self.pdf_client, PDF_MODEL, INVOICE_SYSTEM_PROMPT, content)
+            )
             data = json.loads(raw)
         except OpenAIError as e:
             logger.error("OpenAI API error (invoice): %s", e)
@@ -259,11 +271,11 @@ class Summariser:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY_EMAILS")
     if not api_key:
-        print("Set OPENAI_API_KEY in .env to test the summariser.")
+        print("Set OPENAI_API_KEY_EMAILS in .env to test the summariser.")
     else:
-        s = Summariser(api_key=api_key, max_tokens=400)
+        s = Summariser(emails_api_key=api_key, max_tokens=400)
         sample = {
             "sender": "billing@acme.com",
             "date": "Mon, 1 Apr 2026 09:00:00 +0000",
