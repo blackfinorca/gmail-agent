@@ -14,7 +14,7 @@ A Python agent that polls Gmail on a schedule and routes messages through
    subject keywords**. A message joins a thread when its **Subject** contains
    one of the thread's keywords (case-insensitive substring; sender is
    ignored). All messages in a thread fold into **one rolling "briefing-note"
-   summary per named thread**. Claude regenerates that summary every time a
+   summary per named thread**. The model regenerates that summary every time a
    new batch arrives, preserving running context. A message whose subject
    matches two threads is assigned to the first match.
 
@@ -22,7 +22,7 @@ A Python agent that polls Gmail on a schedule and routes messages through
    sender substrings**. Messages from a group's senders are scanned per-message.
    Any **PDF attachments** (≤10MB) are downloaded and turned into text
    (`attachments.pdf_to_text`: pdfplumber, OCR fallback for scans) and fed to
-   Claude alongside the email body. Claude detects whether each email is an
+   the model alongside the email body. the model detects whether each email is an
    invoice and, if so, extracts structured fields (invoice number, amount, due
    date, etc.) into a dedicated `invoices` table, tagged with its group name,
    shown on a separate dashboard tab.
@@ -38,7 +38,7 @@ renders both tabs.
 |--------------|-------------------------------------|
 | Language     | Python 3.11+                        |
 | Gmail        | `google-api-python-client` (OAuth)  |
-| LLM          | `anthropic` SDK, `claude-sonnet-4-6` (env `CLAUDE_MODEL`) |
+| LLM          | `openai` SDK, `gpt-4o-mini` (env `OPENAI_MODEL`), JSON mode |
 | Scheduler    | `schedule` + `time.sleep`           |
 | Storage      | SQLite (single file, `agent.db`)    |
 | Config       | `.env` + `rules.json`               |
@@ -62,7 +62,7 @@ email-agent/
 ├── gmail_client.py         ← OAuth + paginated fetch + attachment download
 ├── attachments.py          ← PDF → text (pdfplumber, OCR fallback)
 ├── filter_engine.py        ← thread_for() / invoice_group_for()
-├── summariser.py           ← Claude prompts, JSON-shaped responses
+├── summariser.py           ← OpenAI prompts, JSON-shaped responses
 ├── storage.py              ← SQLite: thread_summaries, invoices, processed_messages, run_log
 ├── agent.py                ← main loop, signals, CLI entry
 │
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS run_log (
 `invoice_key` dedup logic: `invoice_number|sender_email` when an invoice
 number is present, otherwise falls back to `message_id`. `sent_at` is the
 email's received date (unix); `payable_at` is the due date as text exactly
-as extracted by Claude.
+as extracted by the model.
 
 `processed_messages` is the dedupe ledger shared by both pipelines; `--since`
 clears it for a chosen window so the agent can rescan.
@@ -184,10 +184,12 @@ clears it for a chosen window so the agent can rescan.
   than the local substring filter (which makes the final call).
 
 ### `summariser.py`
-- Model: module-level `MODEL` constant = `os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")`;
-  all four API calls use it. Override with `CLAUDE_MODEL` in `.env`.
-- Claude sometimes wraps its JSON reply in ```` ```json ```` fences —
-  `_extract_json()` strips them before `json.loads()`.
+- Uses the **OpenAI** SDK. Model: module-level `MODEL` = `os.getenv("OPENAI_MODEL",
+  "gpt-4o-mini")`. All calls go through `Summariser._chat(system, user)`, which
+  uses Chat Completions with `response_format={"type": "json_object"}` (**JSON
+  mode** — guaranteed-valid JSON, so prose-wrapping is a non-issue).
+- `_extract_json()` is kept as a defensive fallback (strips fences / slices the
+  object) but JSON mode makes it mostly a no-op.
 - `SYSTEM_PROMPT` uses `{max_tokens}` as a format placeholder, so the literal
   JSON braces in the prompt **must be escaped as `{{ }}`** — easy to break
   when editing. (See commit 332bde8.)
@@ -205,7 +207,7 @@ clears it for a chosen window so the agent can rescan.
     `(summary: str, pending_action: str)`.
   - `summarise_thread(msgs)` — one-shot summarise a full thread.
   - `extract_invoice(msg) -> dict` — **the invoice pipeline path**: sends one
-    message to Claude with `INVOICE_SYSTEM_PROMPT`. Includes `msg["attachments_text"]`
+    message to the model with `INVOICE_SYSTEM_PROMPT`. Includes `msg["attachments_text"]`
     (extracted PDF text) in the prompt when present. Returns `{"is_invoice": False}`
     for non-invoices or JSON parse failures; otherwise returns a dict with
     `is_invoice=True` and the extracted string fields (`billed_to`,
@@ -285,7 +287,7 @@ or skip the OAuth step.
 
 | Missing file | Tier | How to create it |
 |---|---|---|
-| `.env` | auto | Copy `.env.example` → `.env`. Leave secret values as the placeholder strings and tell the user which keys still need real values (at minimum `ANTHROPIC_API_KEY`). Never invent or commit real keys. |
+| `.env` | auto | Copy `.env.example` → `.env`. Leave secret values as the placeholder strings and tell the user which keys still need real values (at minimum `OPENAI_API_KEY`). Never invent or commit real keys. |
 | `credentials/` (directory) | auto | `mkdir -p credentials` if missing. Also create `credentials/.gitkeep` if the directory is empty. |
 | `credentials/credentials.json` | **user-only** | OAuth client secret. Cannot be generated — the user must download it from Google Cloud Console (see README). If missing, stop and ask the user to provide it; do not stub it out. |
 | `credentials/token.json` | runtime | Auto-created by `gmail_client.GmailClient.authenticate()` on first run. Requires an interactive browser flow — only generated when the user runs `python agent.py --once` themselves. Do **not** try to run the OAuth flow non-interactively. |
@@ -302,7 +304,7 @@ When the user asks to set the project up from a fresh clone:
 2. `mkdir -p credentials` if absent.
 3. Check `credentials/credentials.json` exists. **If not, stop and ask the
    user** — they must download it from Google Cloud Console.
-4. Tell the user to fill in `ANTHROPIC_API_KEY` in `.env`, then run
+4. Tell the user to fill in `OPENAI_API_KEY` in `.env`, then run
    `python agent.py --once` so the OAuth flow can write `token.json` and
    `storage.py` can create `agent.db`.
 5. Do not try to run the agent yourself before the user has done the OAuth
@@ -315,9 +317,10 @@ When the user asks to set the project up from a fresh clone:
 - **JSON-in-format-string trap**: `SYSTEM_PROMPT` is `.format()`-ed with
   `max_tokens`. Any literal `{` or `}` in the prompt must be doubled. The
   example JSON shape at the bottom of the prompt uses `{{ }}` for this reason.
-- **Markdown fences from Claude**: occasionally the model wraps its JSON in
-  ```` ```json … ``` ````. `_extract_json()` strips this; do not remove that
-  helper.
+- **JSON output**: calls use OpenAI **JSON mode** (`response_format=
+  {"type": "json_object"}`), so replies are valid JSON objects. JSON mode
+  requires the word "json" in the prompt — every prompt already says "valid
+  JSON". `_extract_json()` remains as a defensive fallback.
 - **OCR system binaries**: scanned-PDF extraction needs `tesseract` + `poppler`
   installed at the OS level (`brew install tesseract poppler`). They are NOT pip
   packages. Missing → scanned invoices extract `''` (logged, not fatal); digital
@@ -348,8 +351,9 @@ When the user asks to set the project up from a fresh clone:
 ## Error-handling expectations
 
 - Gmail `HttpError` → log, continue, record in `run_log.errors`.
-- `anthropic.APIError` → log and skip that sender batch (retry next poll).
-- JSON parse failure from Claude → log the raw text, store it as-is with
+- `openai.OpenAIError` → log and skip that sender batch / invoice (retry next
+  poll; the message is not marked processed, so a re-run retries it).
+- JSON parse failure → log the raw text, store it as-is with
   `pending_action='none'` (so the dashboard still shows *something*).
 - SQLite write failure → log with traceback, do not crash the loop.
 - Refresh-token failure → `google-auth` raises; the agent logs a clear

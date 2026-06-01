@@ -47,7 +47,7 @@ class Agent:
         self.config = load_config()
         self.db_path = os.getenv("DB_PATH", "./agent.db")
         self.credentials_dir = os.getenv("CREDENTIALS_DIR", "./credentials")
-        self.api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        self.api_key = os.getenv("OPENAI_API_KEY", "")
 
         self.storage = Storage(self.db_path)
         self.gmail = GmailClient(credentials_dir=self.credentials_dir)

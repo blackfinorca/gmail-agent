@@ -3,20 +3,20 @@ import logging
 import os
 import re
 
-import anthropic
+from openai import OpenAI, OpenAIError
 
 logger = logging.getLogger(__name__)
 
-# Override with CLAUDE_MODEL in .env. Sonnet 4.x is $3/M in, $15/M out.
-MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+# Override with OPENAI_MODEL in .env. gpt-4o-mini is ~$0.15/M in, $0.60/M out.
+MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
 def _extract_json(text: str) -> str:
     """Return the bare JSON string from a model reply.
 
-    Handles ```json fences and any prose the model adds before/after the
-    object (it sometimes ignores the 'no preamble' instruction)."""
-    text = text.strip()
+    JSON mode already yields a clean object, but this stays defensive: it strips
+    ```json fences and slices out the object if any prose surrounds it."""
+    text = (text or "").strip()
     # Remove ```json ... ``` or ``` ... ``` wrappers
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
@@ -106,9 +106,40 @@ Update the summary and determine whose action is pending.\
 
 class Summariser:
     def __init__(self, api_key: str, max_tokens: int = 400):
-        self.client = anthropic.Anthropic(api_key=api_key)
+        self.client = OpenAI(api_key=api_key)
         self.max_tokens = max_tokens          # word-count hint in prompt
         self._api_max_tokens = max(1200, max_tokens * 3)  # actual API response budget
+
+    def _chat(self, system: str, user: str) -> str:
+        """One JSON-mode chat call. Returns the raw response content string.
+        Raises OpenAIError on API failure (caller decides what to do)."""
+        response = self.client.chat.completions.create(
+            model=MODEL,
+            max_tokens=self._api_max_tokens,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        return response.choices[0].message.content
+
+    def _summarise(self, system: str, user: str) -> tuple:
+        """Run a summary call and return (summary, pending_action)."""
+        try:
+            raw = _extract_json(self._chat(system, user))
+            data = json.loads(raw)
+            summary = (data.get("summary") or "").strip()
+            pending_action = data.get("pending_action", "none")
+            if pending_action not in ("you", "them", "none"):
+                pending_action = "none"
+            return summary, pending_action
+        except OpenAIError as e:
+            logger.error("OpenAI API error: %s", e)
+            raise
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error("Failed to parse summariser response: %s | raw=%r", e, locals().get("raw", ""))
+            return locals().get("raw", ""), "none"
 
     def update_summary(self, existing_summary: str, new_message: dict) -> tuple:
         """Returns (summary: str, pending_action: str)."""
@@ -120,27 +151,7 @@ class Summariser:
             subject=new_message.get("subject", ""),
             body_text=new_message.get("body_text", "") or new_message.get("snippet", ""),
         )
-
-        try:
-            response = self.client.messages.create(
-                model=MODEL,
-                max_tokens=self._api_max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-            )
-            raw = _extract_json(response.content[0].text)
-            data = json.loads(raw)
-            summary = data.get("summary", "").strip()
-            pending_action = data.get("pending_action", "none")
-            if pending_action not in ("you", "them", "none"):
-                pending_action = "none"
-            return summary, pending_action
-        except anthropic.APIError as e:
-            logger.error("Anthropic API error: %s", e)
-            raise
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.error("Failed to parse summariser response: %s | raw=%r", e, locals().get("raw", ""))
-            return locals().get("raw", ""), "none"
+        return self._summarise(system, user)
 
     def initial_summary(self, message: dict) -> tuple:
         return self.update_summary("", message)
@@ -164,27 +175,7 @@ class Summariser:
             f"NEW MESSAGES ({len(new_messages)}):\n{msgs_text}"
             "Update the summary to reflect all new messages above, then determine whose action is pending."
         )
-
-        try:
-            response = self.client.messages.create(
-                model=MODEL,
-                max_tokens=self._api_max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-            )
-            raw = _extract_json(response.content[0].text)
-            data = json.loads(raw)
-            summary = data.get("summary", "").strip()
-            pending_action = data.get("pending_action", "none")
-            if pending_action not in ("you", "them", "none"):
-                pending_action = "none"
-            return summary, pending_action
-        except anthropic.APIError as e:
-            logger.error("Anthropic API error: %s", e)
-            raise
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.error("Failed to parse summariser response: %s | raw=%r", e, locals().get("raw", ""))
-            return locals().get("raw", ""), "none"
+        return self._summarise(system, user)
 
     def summarise_thread(self, messages: list) -> tuple:
         """Summarise an entire thread from scratch. Returns (summary, pending_action)."""
@@ -216,27 +207,7 @@ class Summariser:
             )
 
         user = f"FULL THREAD:\n\n{thread_text}\nSummarise this thread and determine whose action is pending."
-
-        try:
-            response = self.client.messages.create(
-                model=MODEL,
-                max_tokens=self._api_max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-            )
-            raw = _extract_json(response.content[0].text)
-            data = json.loads(raw)
-            summary = data.get("summary", "").strip()
-            pending_action = data.get("pending_action", "none")
-            if pending_action not in ("you", "them", "none"):
-                pending_action = "none"
-            return summary, pending_action
-        except anthropic.APIError as e:
-            logger.error("Anthropic API error: %s", e)
-            raise
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.error("Failed to parse summariser response: %s | raw=%r", e, locals().get("raw", ""))
-            return locals().get("raw", ""), "none"
+        return self._summarise(system, user)
 
     def extract_invoice(self, message: dict) -> dict:
         """Detect + extract a single invoice from one email.
@@ -262,16 +233,10 @@ class Summariser:
         user += "Is this an invoice? If so, extract the fields."
 
         try:
-            response = self.client.messages.create(
-                model=MODEL,
-                max_tokens=self._api_max_tokens,
-                system=INVOICE_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user}],
-            )
-            raw = _extract_json(response.content[0].text)
+            raw = _extract_json(self._chat(INVOICE_SYSTEM_PROMPT, user))
             data = json.loads(raw)
-        except anthropic.APIError as e:
-            logger.error("Anthropic API error (invoice): %s", e)
+        except OpenAIError as e:
+            logger.error("OpenAI API error (invoice): %s", e)
             raise
         except (json.JSONDecodeError, KeyError) as e:
             logger.error("Failed to parse invoice response: %s | raw=%r", e, locals().get("raw", ""))
@@ -293,12 +258,10 @@ class Summariser:
 
 
 if __name__ == "__main__":
-    import os
-
     logging.basicConfig(level=logging.INFO)
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        print("Set ANTHROPIC_API_KEY in .env to test the summariser.")
+        print("Set OPENAI_API_KEY in .env to test the summariser.")
     else:
         s = Summariser(api_key=api_key, max_tokens=400)
         sample = {
@@ -312,5 +275,4 @@ if __name__ == "__main__":
                 "Bank transfer details are on the invoice.\n\nThank you."
             ),
         }
-        summary = s.initial_summary(sample)
-        print("Summary:\n", summary)
+        print("Summary:\n", s.initial_summary(sample))

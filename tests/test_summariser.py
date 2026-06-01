@@ -3,19 +3,21 @@ import types
 from summariser import Summariser
 
 
-class _FakeMessages:
+class _FakeCompletions:
     def __init__(self, text):
         self._text = text
         self.last_kwargs = None
 
     def create(self, **kwargs):
         self.last_kwargs = kwargs
-        return types.SimpleNamespace(content=[types.SimpleNamespace(text=self._text)])
+        msg = types.SimpleNamespace(content=self._text)
+        return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg)])
 
 
 class _FakeClient:
+    """Mimics openai.OpenAI: client.chat.completions.create(...)."""
     def __init__(self, text):
-        self.messages = _FakeMessages(text)
+        self.chat = types.SimpleNamespace(completions=_FakeCompletions(text))
 
 
 def _summariser(text):
@@ -75,6 +77,7 @@ def test_extract_invoice_includes_attachment_text():
         "sender": "law@firm.jp", "body_text": "please find attached",
         "attachments_text": "--- inv.pdf ---\nTotal Amount Due 500,000 JPY",
     })
-    sent = s.client.messages.last_kwargs["messages"][0]["content"]
+    # messages[0]=system, messages[1]=user (where the attachment text goes)
+    sent = s.client.chat.completions.last_kwargs["messages"][1]["content"]
     assert "ATTACHMENTS" in sent
     assert "500,000 JPY" in sent
