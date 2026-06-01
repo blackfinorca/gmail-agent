@@ -8,6 +8,7 @@ def test_invoices_route_renders_invoice(tmp_path, monkeypatch):
     s = storage_mod.Storage(db)
     s.upsert_invoice(
         invoice_key="4521|b@v.com", message_id="m1", sender_email="b@v.com",
+        invoice_group="Accounting for Benten",
         billed_to="Acme", invoice_name="March consulting", company="Vendor Co",
         invoice_number="4521", amount="$3,200", sent_at=1000,
         payable_at="15 Apr 2026", link="https://pay.example.com/4521",
@@ -22,6 +23,7 @@ def test_invoices_route_renders_invoice(tmp_path, monkeypatch):
     assert resp.status_code == 200
     assert b"4521" in resp.data
     assert b"Vendor Co" in resp.data
+    assert b"Accounting for Benten" in resp.data
 
 
 def test_index_and_thread_routes_render(tmp_path, monkeypatch):

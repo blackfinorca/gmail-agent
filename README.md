@@ -2,7 +2,7 @@
 
 A Python agent that polls a Gmail account and runs two pipelines: an **Emails**
 pipeline that maintains an always-current **one-pager briefing per named
-thread** (a group of sender addresses), and an **Invoices** pipeline that
+thread** (matched by subject keywords), and an **Invoices** pipeline that
 extracts structured invoice fields from a separate sender list — both rendered
 in a small local Flask dashboard.
 
@@ -118,20 +118,24 @@ Edit `rules.json` — partial matches are case-insensitive:
 ```json
 {
   "thread_list": {
-    "Acme Deal": ["billing@acme.com", "legal@acme.com"],
-    "Stripe":    ["@billing.stripe.com"]
+    "Draft SPA":  ["SPA", "share purchase agreement"],
+    "Benten DD":  ["Benten", "due diligence", "DD"]
   },
-  "invoice_senders": ["invoices@vendor.com", "@billing.stripe.com"]
+  "invoice_groups": {
+    "Accounting service for Benten": ["remi0813.at@gmail.com", "t-furukawa@oharalaw.jp"]
+  }
 }
 ```
 
-- **`thread_list`** — a map of **named thread → list of `From:` substrings**
-  for the **Emails** pipeline. All addresses under one name fold into a single
-  rolling briefing-note summary for that thread (shown under the thread name on
-  the dashboard). A sender listed under two names goes to the first match.
-- **`invoice_senders`** — a flat array of `From:` substrings for the
-  **Invoices** pipeline: each matching message is scanned by Claude for
-  structured invoice fields and stored in the `invoices` table.
+- **`thread_list`** — a map of **named thread → list of subject keywords** for
+  the **Emails** pipeline. A message joins a thread when its **Subject** contains
+  one of the keywords (sender is ignored). Each thread keeps a single rolling
+  briefing-note summary, shown under the thread name on the dashboard. A subject
+  matching two threads goes to the first match.
+- **`invoice_groups`** — a map of **named group → list of `From:` substrings**
+  for the **Invoices** pipeline. Each matching message is scanned by Claude for
+  structured invoice fields, tagged with the group name, and stored in the
+  `invoices` table.
 
 ### Hot-reload without restart
 

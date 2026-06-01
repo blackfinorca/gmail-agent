@@ -12,37 +12,40 @@ class FilterEngine:
         self.rules = rules
 
     def thread_for(self, message: dict) -> str | None:
-        """Return the name of the first thread group whose member address
-        matches the sender, or None if the message belongs to no thread."""
+        """Return the name of the first thread whose subject keyword appears in
+        the message subject, or None if the message belongs to no thread."""
+        subject = message.get("subject", "").lower()
+        for name, keywords in self.rules.thread_list.items():
+            for kw in keywords:
+                if kw.lower() in subject:
+                    return name
+        return None
+
+    def invoice_group_for(self, message: dict) -> str | None:
+        """Return the name of the first invoice group whose sender substring
+        matches the sender, or None if the message belongs to no group."""
         sender = message.get("sender", "").lower()
-        for name, emails in self.rules.thread_list.items():
+        for name, emails in self.rules.invoice_groups.items():
             for entry in emails:
                 if entry.lower() in sender:
                     return name
         return None
 
-    def matches_invoice(self, message: dict) -> bool:
-        sender = message.get("sender", "").lower()
-        for entry in self.rules.invoice_senders:
-            if entry.lower() in sender:
-                return True
-        return False
-
 
 if __name__ == "__main__":
     rules = FilterRules(
-        thread_list={"Vendors": ["billing@", "accounts@"]},
-        invoice_senders=["invoices@vendor.com"],
+        thread_list={"Draft SPA": ["SPA", "share purchase"]},
+        invoice_groups={"Accounting": ["invoices@vendor.com"]},
     )
     engine = FilterEngine(rules)
 
     test_messages = [
-        {"sender": "billing@acme.com", "subject": "Statement", "body_text": ""},
-        {"sender": "invoices@vendor.com", "subject": "Invoice", "body_text": ""},
+        {"sender": "lawyer@firm.com", "subject": "Re: Draft SPA v3", "body_text": ""},
+        {"sender": "invoices@vendor.com", "subject": "Invoice #12", "body_text": ""},
         {"sender": "spam@random.com", "subject": "Hello", "body_text": ""},
     ]
     for msg in test_messages:
         print(
             f"  [{msg['sender']}] thread={engine.thread_for(msg)} "
-            f"invoice={engine.matches_invoice(msg)}"
+            f"invoice_group={engine.invoice_group_for(msg)}"
         )

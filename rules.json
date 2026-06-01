@@ -1,25 +1,14 @@
 {
   "thread_list": {
-   "Benten DD discussion": [
-    "core8eight@gmail.com",
-    "info@core8eight.com",
-    "ashiojiri@shiojiri.gr.jp",
-    "ykoga@shiojiri.gr.jp",
-    "remi0813.at@gmail.com",
-    "atsunori@tsujimura-cpa.com",
-    "t-furukawa@oharalaw.jp",
-    "michal.polak22@gmail.com",
-    "stwinkle200@gmail.com"
-    ],
-    "Moby": [
-      "hello@moby.co"
-    ],
-    "Stock Analysis": [
-      "contact@stockanalysis.com"
-    ]
+    "Benten DD discussion": ["Benten", "due diligence", "DD"],
+    "Draft SPA": ["SPA", "share purchase agreement"],
+    "Moby": ["Moby"],
+    "Stock Analysis": ["Stock Analysis"]
   },
-  "invoice_senders": [
-    "remi0813.at@gmail.com",
-    "t-furukawa@oharalaw.jp"
-  ]
+  "invoice_groups": {
+    "Accounting service for Benten": [
+      "remi0813.at@gmail.com",
+      "t-furukawa@oharalaw.jp"
+    ]
+  }
 }

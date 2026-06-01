@@ -59,11 +59,11 @@ class Agent:
         self.config = load_config()
         self.filter = FilterEngine(self.config)
         logger.info(
-            "Rules reloaded — %d thread senders, %d invoice senders",
+            "Rules reloaded — %d threads, %d invoice groups",
             len(self.config.thread_list),
-            len(self.config.invoice_senders),
+            len(self.config.invoice_groups),
         )
-        print(f"  Rules reloaded: thread_list={self.config.thread_list}  invoice_senders={self.config.invoice_senders}")
+        print(f"  Rules reloaded: thread_list={self.config.thread_list}  invoice_groups={self.config.invoice_groups}")
 
     def _handle_sigusr1(self, signum, frame):
         self._pending_reload = True
@@ -125,7 +125,7 @@ class Agent:
             thread_name = self.filter.thread_for(msg)
             if thread_name is not None:
                 thread_batches.setdefault(thread_name, []).append(msg)
-            if self.filter.matches_invoice(msg):
+            if self.filter.invoice_group_for(msg) is not None:
                 invoice_msgs.append(msg)
 
         messages_matched = sum(len(v) for v in thread_batches.values()) + len(invoice_msgs)
@@ -163,6 +163,7 @@ class Agent:
         # --- Invoice pipeline: structured extraction per message ---
         for msg in invoice_msgs:
             sender_email = self._extract_email(msg["sender"])
+            group = self.filter.invoice_group_for(msg) or ""
             try:
                 data = self.summariser.extract_invoice(msg)
                 llm_calls += 1
@@ -177,6 +178,7 @@ class Agent:
                     invoice_key=key,
                     message_id=msg["id"],
                     sender_email=sender_email,
+                    invoice_group=group,
                     billed_to=data["billed_to"],
                     invoice_name=data["invoice_name"],
                     company=data["company"],
@@ -186,7 +188,7 @@ class Agent:
                     payable_at=data["payable_at"],
                     link=data["link"],
                 )
-                logger.info("Invoice stored: %s from %s", key, sender_email)
+                logger.info("Invoice stored: %s (%s) from %s", key, group, sender_email)
 
             except Exception as e:
                 logger.error("Error processing invoice from %s: %s", sender_email, e)
@@ -229,7 +231,7 @@ class Agent:
         print("=" * 60)
         print(f"  Poll interval  : {interval}s")
         print(f"  Thread senders : {self.config.thread_list}")
-        print(f"  Invoice senders: {self.config.invoice_senders}")
+        print(f"  Invoice groups : {self.config.invoice_groups}")
         print(f"  DB path        : {self.db_path}")
         print(f"  PID file       : {PID_FILE}  (PID {os.getpid()})")
         print(f"  Reload rules   : python agent.py --reload-rules")
