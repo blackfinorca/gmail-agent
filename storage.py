@@ -31,6 +31,21 @@ CREATE TABLE IF NOT EXISTS run_log (
     llm_calls        INTEGER,
     errors           TEXT
 );
+
+CREATE TABLE IF NOT EXISTS invoices (
+    invoice_key     TEXT PRIMARY KEY,
+    message_id      TEXT,
+    sender_email    TEXT,
+    billed_to       TEXT,
+    invoice_name    TEXT,
+    company         TEXT,
+    invoice_number  TEXT,
+    amount          TEXT,
+    sent_at         INTEGER,
+    payable_at      TEXT,
+    link            TEXT,
+    created_at      INTEGER
+);
 """
 
 
@@ -97,6 +112,53 @@ class Storage:
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT * FROM sender_summaries ORDER BY last_updated DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    # --- Invoices ---
+
+    def upsert_invoice(
+        self,
+        invoice_key: str,
+        message_id: str,
+        sender_email: str,
+        billed_to: str,
+        invoice_name: str,
+        company: str,
+        invoice_number: str,
+        amount: str,
+        sent_at: int,
+        payable_at: str,
+        link: str,
+    ):
+        now = int(time.time())
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO invoices
+                    (invoice_key, message_id, sender_email, billed_to, invoice_name,
+                     company, invoice_number, amount, sent_at, payable_at, link, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(invoice_key) DO UPDATE SET
+                    message_id     = excluded.message_id,
+                    sender_email   = excluded.sender_email,
+                    billed_to      = excluded.billed_to,
+                    invoice_name   = excluded.invoice_name,
+                    company        = excluded.company,
+                    invoice_number = excluded.invoice_number,
+                    amount         = excluded.amount,
+                    sent_at        = excluded.sent_at,
+                    payable_at     = excluded.payable_at,
+                    link           = excluded.link
+                """,
+                (invoice_key, message_id, sender_email, billed_to, invoice_name,
+                 company, invoice_number, amount, sent_at, payable_at, link, now),
+            )
+
+    def get_all_invoices(self) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM invoices ORDER BY sent_at DESC"
             ).fetchall()
             return [dict(r) for r in rows]
 

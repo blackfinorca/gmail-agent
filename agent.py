@@ -6,6 +6,7 @@ import signal
 import sys
 import threading
 import time
+from typing import Optional
 
 import schedule
 from dotenv import load_dotenv
@@ -58,11 +59,11 @@ class Agent:
         self.config = load_config()
         self.filter = FilterEngine(self.config)
         logger.info(
-            "Rules reloaded — %d senders, %d keywords",
-            len(self.config.sender_whitelist),
-            len(self.config.keywords),
+            "Rules reloaded — %d thread senders, %d invoice senders",
+            len(self.config.thread_list),
+            len(self.config.invoice_senders),
         )
-        print(f"  Rules reloaded: senders={self.config.sender_whitelist}  keywords={self.config.keywords}")
+        print(f"  Rules reloaded: thread_list={self.config.thread_list}  invoice_senders={self.config.invoice_senders}")
 
     def _handle_sigusr1(self, signum, frame):
         self._pending_reload = True
@@ -81,7 +82,24 @@ class Agent:
         m = re.match(r"^(.+?)\s*<[^>]+>$", sender_str.strip())
         return m.group(1).strip().strip('"') if m else sender_str.strip()
 
-    def run_once(self, since_override: int | None = None):
+    @staticmethod
+    def _invoice_key(invoice_number: str, sender_email: str, message_id: str) -> str:
+        """Dedupe key: invoice_number+sender, else fall back to message_id."""
+        num = (invoice_number or "").strip()
+        if num:
+            return f"{num}|{sender_email}"
+        return message_id
+
+    @staticmethod
+    def _parse_date_to_ts(date_str: str) -> int:
+        """Parse an RFC-2822 email Date header to a unix ts; fall back to now."""
+        from email.utils import parsedate_to_datetime
+        try:
+            return int(parsedate_to_datetime(date_str).timestamp())
+        except (TypeError, ValueError):
+            return int(time.time())
+
+    def run_once(self, since_override: Optional[int] = None):
         run_at = int(time.time())
         messages_seen = 0
         messages_matched = 0
@@ -105,18 +123,21 @@ class Agent:
         messages_seen = len(messages)
         logger.info("Fetched %d message(s)", messages_seen)
 
-        # Group unprocessed, matched messages by sender email
+        # Route unprocessed messages into the two pipelines
         sender_batches: dict[str, list] = {}
+        invoice_msgs: list = []
         for msg in messages:
             if self.storage.is_processed(msg["id"]):
                 continue
-            if not self.filter.matches(msg):
-                continue
-            sender_email = self._extract_email(msg["sender"])
-            sender_batches.setdefault(sender_email, []).append(msg)
+            if self.filter.matches_thread(msg):
+                sender_email = self._extract_email(msg["sender"])
+                sender_batches.setdefault(sender_email, []).append(msg)
+            if self.filter.matches_invoice(msg):
+                invoice_msgs.append(msg)
 
-        messages_matched = sum(len(v) for v in sender_batches.values())
+        messages_matched = sum(len(v) for v in sender_batches.values()) + len(invoice_msgs)
 
+        # --- Thread pipeline: rolling per-sender summary ---
         for sender_email, batch in sender_batches.items():
             rule = self.filter.classify(batch[0])
             display_name = self._extract_display_name(batch[0]["sender"])
@@ -148,6 +169,38 @@ class Agent:
                 logger.error("Error processing sender %s: %s", sender_email, e)
                 errors.append(f"sender:{sender_email} — {e}")
 
+        # --- Invoice pipeline: structured extraction per message ---
+        for msg in invoice_msgs:
+            sender_email = self._extract_email(msg["sender"])
+            try:
+                data = self.summariser.extract_invoice(msg)
+                llm_calls += 1
+                self.storage.mark_processed(msg["id"], msg["thread_id"])
+
+                if not data.get("is_invoice"):
+                    logger.info("Message %s from %s is not an invoice — skipped", msg["id"], sender_email)
+                    continue
+
+                key = self._invoice_key(data["invoice_number"], sender_email, msg["id"])
+                self.storage.upsert_invoice(
+                    invoice_key=key,
+                    message_id=msg["id"],
+                    sender_email=sender_email,
+                    billed_to=data["billed_to"],
+                    invoice_name=data["invoice_name"],
+                    company=data["company"],
+                    invoice_number=data["invoice_number"],
+                    amount=data["amount"],
+                    sent_at=self._parse_date_to_ts(msg.get("date", "")),
+                    payable_at=data["payable_at"],
+                    link=data["link"],
+                )
+                logger.info("Invoice stored: %s from %s", key, sender_email)
+
+            except Exception as e:
+                logger.error("Error processing invoice from %s: %s", sender_email, e)
+                errors.append(f"invoice:{sender_email} — {e}")
+
         self.storage.log_run(
             run_at=run_at,
             messages_seen=messages_seen,
@@ -178,14 +231,14 @@ class Agent:
         logger.info("Dashboard started at http://localhost:5050")
         print("  Dashboard      : http://localhost:5050")
 
-    def run_forever(self, with_dashboard: bool = False, since_override: int | None = None):
+    def run_forever(self, with_dashboard: bool = False, since_override: Optional[int] = None):
         interval = self.config.poll_interval_seconds
         print("=" * 60)
         print("  Gmail Intelligence Agent")
         print("=" * 60)
         print(f"  Poll interval  : {interval}s")
-        print(f"  Sender rules   : {self.config.sender_whitelist}")
-        print(f"  Keywords       : {self.config.keywords}")
+        print(f"  Thread senders : {self.config.thread_list}")
+        print(f"  Invoice senders: {self.config.invoice_senders}")
         print(f"  DB path        : {self.db_path}")
         print(f"  PID file       : {PID_FILE}  (PID {os.getpid()})")
         print(f"  Reload rules   : python agent.py --reload-rules")
