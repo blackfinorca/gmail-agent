@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(python -c \"import pytest; print\\('pytest', pytest.__version__\\)\")",
+      "Read(//Users/michalpolak/.claude/skills/subagent-driven-development/**)",
+      "Read(//Users/michalpolak/.agents/skills/subagent-driven-development/**)",
+      "Bash(pip install *)",
+      "Bash(python -m pytest -q)",
+      "Bash(\"/Users/michalpolak/Desktop/Blackfin Orca/Coding/email-agent/.venv/bin/python\" -m pip install \"pytest>=8.0.0\")",
+      "Bash(pytest --version)",
+      "Bash(pytest -q)",
+      "Bash(python config.py)",
+      "Bash(pytest tests/test_filter.py -q)",
+      "Bash(python -m pytest tests/test_storage.py -q)",
+      "Bash(.venv/bin/pytest tests/test_storage.py -q)",
+      "Bash(python3 -m pytest --version)",
+      "Bash(python3 -m pip install pytest -q)",
+      "Bash(python3 -m pytest tests/test_storage.py -q)",
+      "Bash(python -m pytest tests/test_summariser.py -q)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(python -m py_compile agent.py)",
+      "Bash(git push *)",
+      "Bash(git branch *)",
+      "Bash(python -m py_compile agent.py config.py filter_engine.py storage.py dashboard/app.py)",
+      "Bash(python filter_engine.py)"
+    ]
+  }
+}

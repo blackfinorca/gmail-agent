@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 
 from config import FilterRules
@@ -9,12 +11,15 @@ class FilterEngine:
     def __init__(self, rules: FilterRules):
         self.rules = rules
 
-    def matches_thread(self, message: dict) -> bool:
+    def thread_for(self, message: dict) -> str | None:
+        """Return the name of the first thread group whose member address
+        matches the sender, or None if the message belongs to no thread."""
         sender = message.get("sender", "").lower()
-        for entry in self.rules.thread_list:
-            if entry.lower() in sender:
-                return True
-        return False
+        for name, emails in self.rules.thread_list.items():
+            for entry in emails:
+                if entry.lower() in sender:
+                    return name
+        return None
 
     def matches_invoice(self, message: dict) -> bool:
         sender = message.get("sender", "").lower()
@@ -23,17 +28,10 @@ class FilterEngine:
                 return True
         return False
 
-    def classify(self, message: dict) -> str:
-        sender = message.get("sender", "").lower()
-        for entry in self.rules.thread_list:
-            if entry.lower() in sender:
-                return f"sender:{entry}"
-        return "unmatched"
-
 
 if __name__ == "__main__":
     rules = FilterRules(
-        thread_list=["billing@", "accounts@"],
+        thread_list={"Vendors": ["billing@", "accounts@"]},
         invoice_senders=["invoices@vendor.com"],
     )
     engine = FilterEngine(rules)
@@ -45,6 +43,6 @@ if __name__ == "__main__":
     ]
     for msg in test_messages:
         print(
-            f"  [{msg['sender']}] thread={engine.matches_thread(msg)} "
-            f"invoice={engine.matches_invoice(msg)} rule={engine.classify(msg)}"
+            f"  [{msg['sender']}] thread={engine.thread_for(msg)} "
+            f"invoice={engine.matches_invoice(msg)}"
         )

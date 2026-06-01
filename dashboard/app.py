@@ -33,26 +33,26 @@ def strip_html(text: str) -> str:
 
 @app.route("/")
 def index():
-    senders = storage.get_all_sender_summaries()
+    threads = storage.get_all_thread_summaries()
     last_run = storage.get_last_run_timestamp()
-    for s in senders:
-        s["relative_time"] = relative_time(s.get("last_updated", 0))
-        s["summary_snippet"] = strip_html(s.get("summary", ""))[:120]
+    for t in threads:
+        t["relative_time"] = relative_time(t.get("last_updated", 0))
+        t["summary_snippet"] = strip_html(t.get("summary", ""))[:120]
     return render_template(
         "index.html",
-        senders=senders,
-        total=len(senders),
+        threads=threads,
+        total=len(threads),
         last_run=relative_time(last_run),
     )
 
 
-@app.route("/sender/<path:sender_email>")
-def sender_detail(sender_email):
-    sender = storage.get_sender_summary(sender_email)
-    if not sender:
+@app.route("/thread/<path:thread_name>")
+def thread_detail(thread_name):
+    thread = storage.get_thread_summary(thread_name)
+    if not thread:
         abort(404)
-    sender["relative_time"] = relative_time(sender.get("last_updated", 0))
-    return render_template("sender.html", sender=sender)
+    thread["relative_time"] = relative_time(thread.get("last_updated", 0))
+    return render_template("thread.html", thread=thread)
 
 
 @app.route("/invoices")

@@ -10,10 +10,12 @@ It describes **the code as it stands**, not the original build spec.
 A Python agent that polls Gmail on a schedule and routes messages through
 **two independent pipelines**:
 
-1. **Emails pipeline** — senders listed in `thread_list` get one rolling
-   "briefing-note" summary per sender (not per thread). Claude regenerates the
-   summary every time a new batch arrives, preserving running context across
-   many threads from the same contact.
+1. **Emails pipeline** — `thread_list` is a map of **named thread → list of
+   email addresses**. All addresses under a name fold into **one rolling
+   "briefing-note" summary per named thread** (not per sender). Claude
+   regenerates that summary every time a new batch arrives, preserving running
+   context across every contact in the group. A sender listed under two names
+   is assigned to the first match.
 
 2. **Invoices pipeline** — senders listed in `invoice_senders` are scanned
    per-message. Claude detects whether each email is an invoice and, if so,
@@ -53,18 +55,17 @@ email-agent/
 │
 ├── config.py               ← loads .env + rules.json → FilterRules
 ├── gmail_client.py         ← OAuth + paginated message fetch
-├── filter_engine.py        ← matches_thread / matches_invoice / classify()
+├── filter_engine.py        ← thread_for() / matches_invoice()
 ├── summariser.py           ← Claude prompts, JSON-shaped responses
-├── storage.py              ← SQLite: sender_summaries, invoices, processed_messages, run_log
+├── storage.py              ← SQLite: thread_summaries, invoices, processed_messages, run_log
 ├── agent.py                ← main loop, signals, CLI entry
 │
 ├── dashboard/
 │   ├── app.py              ← Flask routes
 │   └── templates/
-│       ├── index.html      ← grouped sender list (Emails tab)
-│       ├── sender.html     ← per-sender briefing detail
-│       ├── invoices.html   ← structured invoice list (Invoices tab)
-│       └── thread.html     ← legacy (kept for compatibility)
+│       ├── index.html      ← named-thread list (Emails tab)
+│       ├── thread.html     ← per-thread briefing detail
+│       └── invoices.html   ← structured invoice list (Invoices tab)
 │
 └── credentials/            ← gitignored; OAuth client + token live here
 ```
@@ -76,13 +77,12 @@ email-agent/
 Four tables; all created on first run by `storage.Storage._init_db()`.
 
 ```sql
-CREATE TABLE IF NOT EXISTS sender_summaries (
-    sender_email    TEXT PRIMARY KEY,
-    display_name    TEXT,
-    summary         TEXT,            -- HTML; see summariser format
+CREATE TABLE IF NOT EXISTS thread_summaries (
+    thread_name     TEXT PRIMARY KEY,  -- the name from rules.json thread_list
+    members         TEXT,              -- comma-joined member email addresses
+    summary         TEXT,              -- HTML; see summariser format
     message_count   INTEGER DEFAULT 0,
-    last_updated    INTEGER,         -- unix ts
-    matched_rule    TEXT,            -- e.g. "sender:billing@"
+    last_updated    INTEGER,           -- unix ts
     pending_action  TEXT DEFAULT 'none'   -- 'you' | 'them' | 'none'
 );
 
@@ -131,7 +131,8 @@ clears it for a chosen window so the agent can rescan.
 
 ### `config.py`
 - `FilterRules` dataclass (`thread_list`, `invoice_senders`,
-  `poll_interval_seconds`, `max_summary_tokens`). Keywords and
+  `poll_interval_seconds`, `max_summary_tokens`). `thread_list` is a
+  `dict[str, list[str]]` (named thread → member emails). Keywords and
   `sender_whitelist` were removed.
 - `load_config()` reads `rules.json` for rules (`thread_list`,
   `invoice_senders`) and `.env` for intervals/tokens.
@@ -145,13 +146,11 @@ clears it for a chosen window so the agent can rescan.
 - `decode_body()` — prefers `text/plain`, strips quoted reply blocks.
 
 ### `filter_engine.py`
-- `matches_thread(msg)` — case-insensitive partial match of `thread_list`
-  entries against the `sender` field.
+- `thread_for(msg)` — returns the **name** of the first `thread_list` group
+  whose member address (case-insensitive partial match) appears in the
+  `sender` field, or `None` if the message belongs to no thread.
 - `matches_invoice(msg)` — case-insensitive partial match of `invoice_senders`
   entries against the `sender` field.
-- `classify(msg)` — returns `"sender:<entry>"` for the first matching
-  `thread_list` entry, or `"unmatched"` if none match. Keyword matching was
-  removed.
 
 ### `summariser.py`
 - Model: `claude-sonnet-4-20250514`.
@@ -169,7 +168,8 @@ clears it for a chosen window so the agent can rescan.
 - Four entry points:
   - `update_summary(existing, msg)` — single-message update (legacy path).
   - `update_sender_summary(existing, batch)` — **the thread pipeline path**:
-    folds a batch of new messages into the rolling sender summary. Returns
+    folds a batch of new messages into the rolling thread summary (the method
+    name is historical; it is key-agnostic). Returns
     `(summary: str, pending_action: str)`.
   - `summarise_thread(msgs)` — one-shot summarise a full thread.
   - `extract_invoice(msg) -> dict` — **the invoice pipeline path**: sends one
@@ -180,12 +180,13 @@ clears it for a chosen window so the agent can rescan.
     `link`).
 
 ### `storage.py`
-- `get_sender_summary`, `upsert_sender_summary` (atomic upsert that increments
-  `message_count` by `message_count_delta`).
+- `get_thread_summary`, `upsert_thread_summary` (atomic upsert keyed by
+  `thread_name`; increments `message_count` by `message_count_delta` and
+  refreshes `members`).
 - `upsert_invoice`, `get_all_invoices()` — invoice CRUD; ordered by
   `sent_at DESC`.
 - `is_processed`, `mark_processed`, `clear_processed_since`.
-- `get_all_sender_summaries()` — ordered by `last_updated DESC`.
+- `get_all_thread_summaries()` — ordered by `last_updated DESC`.
 - `get_last_run_timestamp()` — falls back to "24h ago" if `run_log` is empty.
 
 ### `agent.py`
@@ -194,9 +195,9 @@ clears it for a chosen window so the agent can rescan.
   2. Fetch new Gmail messages.
   3. Skip already-processed; route surviving messages into two pipelines
      (a message can hit both if it matches both lists):
-     - **Thread pipeline**: `matches_thread` → group by sender email →
-       `update_sender_summary(batch)` → `upsert_sender_summary` →
-       `mark_processed`.
+     - **Thread pipeline**: `thread_for(msg)` → group messages by thread name →
+       `update_sender_summary(batch)` → `upsert_thread_summary` (members =
+       configured emails for that thread) → `mark_processed`.
      - **Invoice pipeline**: `matches_invoice` → `extract_invoice(msg)` per
        message → if `is_invoice`, compute `_invoice_key` and `upsert_invoice`
        → `mark_processed`.
@@ -207,10 +208,10 @@ clears it for a chosen window so the agent can rescan.
   - Optionally starts the Flask dashboard in a daemon thread.
   - Installs a `SIGUSR1` handler that flips `_pending_reload` so rules can
     be re-read mid-loop without a restart.
-- Four static helpers: `_extract_email()` and `_extract_display_name()` to
-  split `"Name <addr>"` headers; `_invoice_key(invoice_number, sender_email,
-  message_id)` for dedup; `_parse_date_to_ts(date_str)` to parse RFC-2822
-  Date headers to unix timestamps.
+- Three static helpers: `_extract_email()` splits the address out of
+  `"Name <addr>"` headers; `_invoice_key(invoice_number, sender_email,
+  message_id)` builds the invoice dedup key; `_parse_date_to_ts(date_str)`
+  parses RFC-2822 Date headers to unix timestamps.
 
 ### CLI flags (`python agent.py …`)
 | Flag                  | Effect |
@@ -222,11 +223,11 @@ clears it for a chosen window so the agent can rescan.
 | `--since 7d` (or `12h`, `30m`) | Override the lookback window and clear the processed-cache for that window so messages can be re-ingested. |
 
 ### `dashboard/app.py`
-- `GET /` — `index.html`, all senders grouped, auto-refresh every 60s.
-- `GET /sender/<email>` — `sender.html`, full briefing for one contact.
+- `GET /` — `index.html`, named threads listed (name + members), auto-refresh
+  every 60s.
+- `GET /thread/<name>` — `thread.html`, full briefing for one named thread.
 - `GET /invoices` — `invoices.html`, structured invoice list ordered by
   received date descending.
-- `GET /thread/<id>` — legacy route, retained for older bookmarks.
 - Nav bar (Emails | Invoices) is present on all pages.
 - Read-only; no write endpoints.
 
@@ -248,7 +249,7 @@ or skip the OAuth step.
 | `agent.db` | runtime | Auto-created by `storage.Storage._init_db()` on first run — no action needed. To wipe state, just delete the file. |
 | `agent.log` | runtime | Auto-created by the rotating file handler in `setup_logging()`. No action needed. |
 | `agent.pid` | runtime | Auto-created by `run_forever()` while the agent is alive; removed in its `finally` block. If a stale one is left behind after a crash, it's safe to delete. |
-| `rules.json` | code | Tracked in git. If it's somehow missing, `config.load_config()` raises `FileNotFoundError` — recreate with the schema in [README.md](README.md) (`thread_list` + `invoice_senders` arrays) and ask the user which rules to populate. |
+| `rules.json` | code | Tracked in git. If it's somehow missing, `config.load_config()` raises `FileNotFoundError` — recreate with the schema in [README.md](README.md) (`thread_list` object of named groups + `invoice_senders` array) and ask the user which rules to populate. |
 
 ### Standard "fresh setup" sequence
 

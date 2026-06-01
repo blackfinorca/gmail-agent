@@ -43,3 +43,30 @@ def test_get_all_invoices_orders_by_sent_at_desc(tmp_path):
     s.upsert_invoice(**_invoice_kwargs(invoice_key="b", sent_at=200))
     rows = s.get_all_invoices()
     assert [r["invoice_key"] for r in rows] == ["b", "a"]
+
+
+def test_upsert_thread_summary_and_get(tmp_path):
+    s = Storage(str(tmp_path / "t.db"))
+    s.upsert_thread_summary("Acme Deal", "a@x.com, b@x.com", "<h3>TL;DR</h3>", "you", 2)
+    row = s.get_thread_summary("Acme Deal")
+    assert row["members"] == "a@x.com, b@x.com"
+    assert row["message_count"] == 2
+    assert row["pending_action"] == "you"
+
+
+def test_upsert_thread_summary_accumulates_count(tmp_path):
+    s = Storage(str(tmp_path / "t.db"))
+    s.upsert_thread_summary("Acme Deal", "a@x.com", "s1", "none", 2)
+    s.upsert_thread_summary("Acme Deal", "a@x.com", "s2", "them", 3)
+    row = s.get_thread_summary("Acme Deal")
+    assert row["message_count"] == 5
+    assert row["summary"] == "s2"
+    assert row["pending_action"] == "them"
+
+
+def test_get_all_thread_summaries(tmp_path):
+    s = Storage(str(tmp_path / "t.db"))
+    s.upsert_thread_summary("One", "a@x.com", "s", "none", 1)
+    s.upsert_thread_summary("Two", "b@x.com", "s", "none", 1)
+    names = {r["thread_name"] for r in s.get_all_thread_summaries()}
+    assert names == {"One", "Two"}

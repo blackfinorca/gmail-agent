@@ -76,13 +76,6 @@ class Agent:
         return m.group(1).lower().strip() if m else sender_str.lower().strip()
 
     @staticmethod
-    def _extract_display_name(sender_str: str) -> str:
-        """Return display name from 'Name <email>', or the email if no name."""
-        import re
-        m = re.match(r"^(.+?)\s*<[^>]+>$", sender_str.strip())
-        return m.group(1).strip().strip('"') if m else sender_str.strip()
-
-    @staticmethod
     def _invoice_key(invoice_number: str, sender_email: str, message_id: str) -> str:
         """Dedupe key: invoice_number+sender, else fall back to message_id."""
         num = (invoice_number or "").strip()
@@ -124,27 +117,26 @@ class Agent:
         logger.info("Fetched %d message(s)", messages_seen)
 
         # Route unprocessed messages into the two pipelines
-        sender_batches: dict[str, list] = {}
+        thread_batches: dict[str, list] = {}
         invoice_msgs: list = []
         for msg in messages:
             if self.storage.is_processed(msg["id"]):
                 continue
-            if self.filter.matches_thread(msg):
-                sender_email = self._extract_email(msg["sender"])
-                sender_batches.setdefault(sender_email, []).append(msg)
+            thread_name = self.filter.thread_for(msg)
+            if thread_name is not None:
+                thread_batches.setdefault(thread_name, []).append(msg)
             if self.filter.matches_invoice(msg):
                 invoice_msgs.append(msg)
 
-        messages_matched = sum(len(v) for v in sender_batches.values()) + len(invoice_msgs)
+        messages_matched = sum(len(v) for v in thread_batches.values()) + len(invoice_msgs)
 
-        # --- Thread pipeline: rolling per-sender summary ---
-        for sender_email, batch in sender_batches.items():
-            rule = self.filter.classify(batch[0])
-            display_name = self._extract_display_name(batch[0]["sender"])
-            logger.info("Processing %d message(s) from %s (rule: %s)", len(batch), sender_email, rule)
+        # --- Thread pipeline: one rolling summary per named thread ---
+        for thread_name, batch in thread_batches.items():
+            members = ", ".join(self.config.thread_list.get(thread_name, []))
+            logger.info("Processing %d message(s) for thread %r", len(batch), thread_name)
 
             try:
-                existing = self.storage.get_sender_summary(sender_email)
+                existing = self.storage.get_thread_summary(thread_name)
                 existing_summary = existing["summary"] if existing else ""
 
                 new_summary, pending_action = self.summariser.update_sender_summary(
@@ -155,19 +147,18 @@ class Agent:
                 for msg in batch:
                     self.storage.mark_processed(msg["id"], msg["thread_id"])
 
-                self.storage.upsert_sender_summary(
-                    sender_email=sender_email,
-                    display_name=display_name,
+                self.storage.upsert_thread_summary(
+                    thread_name=thread_name,
+                    members=members,
                     summary=new_summary,
-                    matched_rule=rule,
                     pending_action=pending_action,
                     message_count_delta=len(batch),
                 )
-                logger.info("Sender summary updated for %s (%d new messages)", sender_email, len(batch))
+                logger.info("Thread summary updated for %r (%d new messages)", thread_name, len(batch))
 
             except Exception as e:
-                logger.error("Error processing sender %s: %s", sender_email, e)
-                errors.append(f"sender:{sender_email} — {e}")
+                logger.error("Error processing thread %r: %s", thread_name, e)
+                errors.append(f"thread:{thread_name} — {e}")
 
         # --- Invoice pipeline: structured extraction per message ---
         for msg in invoice_msgs:
