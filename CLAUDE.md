@@ -38,7 +38,7 @@ renders both tabs.
 |--------------|-------------------------------------|
 | Language     | Python 3.11+                        |
 | Gmail        | `google-api-python-client` (OAuth)  |
-| LLM          | `anthropic` SDK, `claude-sonnet-4-20250514` |
+| LLM          | `anthropic` SDK, `claude-sonnet-4-6` (env `CLAUDE_MODEL`) |
 | Scheduler    | `schedule` + `time.sleep`           |
 | Storage      | SQLite (single file, `agent.db`)    |
 | Config       | `.env` + `rules.json`               |
@@ -174,7 +174,8 @@ clears it for a chosen window so the agent can rescan.
   group whose sender substring matches the `sender` field, or `None`.
 
 ### `summariser.py`
-- Model: `claude-sonnet-4-20250514`.
+- Model: module-level `MODEL` constant = `os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")`;
+  all four API calls use it. Override with `CLAUDE_MODEL` in `.env`.
 - Claude sometimes wraps its JSON reply in ```` ```json ```` fences —
   `_extract_json()` strips them before `json.loads()`.
 - `SYSTEM_PROMPT` uses `{max_tokens}` as a format placeholder, so the literal

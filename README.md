@@ -6,7 +6,7 @@ thread** (matched by subject keywords), and an **Invoices** pipeline that
 extracts structured invoice fields from a separate sender list — both rendered
 in a small local Flask dashboard.
 
-Summaries are written by Claude (`claude-sonnet-4-20250514`) in a fixed
+Summaries are written by Claude (`claude-sonnet-4-6`, override via `CLAUDE_MODEL`) in a fixed
 briefing-note format: TL;DR, key decisions, timeline, open items, next action.
 Each thread also has a `pending_action` flag (`you` / `them` / `none`) so you
 can see at a glance who owes whom a reply.

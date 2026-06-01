@@ -1,10 +1,14 @@
 import json
 import logging
+import os
 import re
 
 import anthropic
 
 logger = logging.getLogger(__name__)
+
+# Override with CLAUDE_MODEL in .env. Sonnet 4.x is $3/M in, $15/M out.
+MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 
 def _extract_json(text: str) -> str:
@@ -110,7 +114,7 @@ class Summariser:
 
         try:
             response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=MODEL,
                 max_tokens=self._api_max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": user}],
@@ -154,7 +158,7 @@ class Summariser:
 
         try:
             response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=MODEL,
                 max_tokens=self._api_max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": user}],
@@ -206,7 +210,7 @@ class Summariser:
 
         try:
             response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=MODEL,
                 max_tokens=self._api_max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": user}],
@@ -250,7 +254,7 @@ class Summariser:
 
         try:
             response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=MODEL,
                 max_tokens=self._api_max_tokens,
                 system=INVOICE_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user}],
