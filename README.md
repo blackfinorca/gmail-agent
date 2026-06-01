@@ -1,12 +1,14 @@
 # Gmail Intelligence Agent
 
-A Python agent that polls a Gmail account, filters messages by sender or
-keyword rules, and maintains an always-current **one-pager briefing per
-sender** — rendered in a small local Flask dashboard.
+A Python agent that polls a Gmail account and runs two pipelines: an **Emails**
+pipeline that maintains an always-current **one-pager briefing per named
+thread** (a group of sender addresses), and an **Invoices** pipeline that
+extracts structured invoice fields from a separate sender list — both rendered
+in a small local Flask dashboard.
 
 Summaries are written by Claude (`claude-sonnet-4-20250514`) in a fixed
 briefing-note format: TL;DR, key decisions, timeline, open items, next action.
-Each sender also has a `pending_action` flag (`you` / `them` / `none`) so you
+Each thread also has a `pending_action` flag (`you` / `them` / `none`) so you
 can see at a glance who owes whom a reply.
 
 ---
@@ -115,15 +117,19 @@ Edit `rules.json` — partial matches are case-insensitive:
 
 ```json
 {
-  "thread_list": ["billing@", "accounts@", "@acme.com"],
+  "thread_list": {
+    "Acme Deal": ["billing@acme.com", "legal@acme.com"],
+    "Stripe":    ["@billing.stripe.com"]
+  },
   "invoice_senders": ["invoices@vendor.com", "@billing.stripe.com"]
 }
 ```
 
-- **`thread_list`** — substring match against the `From:` header for the
-  **Emails** pipeline: each matching sender gets a rolling per-sender
-  briefing-note summary.
-- **`invoice_senders`** — substring match against the `From:` header for the
+- **`thread_list`** — a map of **named thread → list of `From:` substrings**
+  for the **Emails** pipeline. All addresses under one name fold into a single
+  rolling briefing-note summary for that thread (shown under the thread name on
+  the dashboard). A sender listed under two names goes to the first match.
+- **`invoice_senders`** — a flat array of `From:` substrings for the
   **Invoices** pipeline: each matching message is scanned by Claude for
   structured invoice fields and stored in the `invoices` table.
 
@@ -157,14 +163,14 @@ are applied on the next poll cycle.
 ```
 ├── agent.py            — main loop, signals, CLI entry
 ├── config.py           — loads .env + rules.json
-├── filter_engine.py    — sender / keyword matching
+├── filter_engine.py    — thread-group / invoice-sender matching
 ├── gmail_client.py     — Gmail OAuth + paginated message fetch
-├── storage.py          — SQLite (sender_summaries, invoices, processed_messages, run_log)
+├── storage.py          — SQLite (thread_summaries, invoices, processed_messages, run_log)
 ├── summariser.py       — Claude prompts + JSON-shaped responses
 ├── rules.json          — editable filter rules (hot-reloadable)
 ├── dashboard/
 │   ├── app.py          — Flask app (read-only)
-│   └── templates/      — index.html, sender.html, invoices.html
+│   └── templates/      — index.html, thread.html, invoices.html
 └── credentials/        — OAuth client + token (gitignored)
 ```
 

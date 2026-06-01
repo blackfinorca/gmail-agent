@@ -7,13 +7,12 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS sender_summaries (
-    sender_email    TEXT PRIMARY KEY,
-    display_name    TEXT,
+CREATE TABLE IF NOT EXISTS thread_summaries (
+    thread_name     TEXT PRIMARY KEY,
+    members         TEXT,
     summary         TEXT,
     message_count   INTEGER DEFAULT 0,
     last_updated    INTEGER,
-    matched_rule    TEXT,
     pending_action  TEXT DEFAULT 'none'
 );
 
@@ -71,21 +70,20 @@ class Storage:
         with self._conn() as conn:
             conn.executescript(SCHEMA)
 
-    # --- Sender summaries ---
+    # --- Thread summaries ---
 
-    def get_sender_summary(self, sender_email: str) -> Optional[dict]:
+    def get_thread_summary(self, thread_name: str) -> Optional[dict]:
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT * FROM sender_summaries WHERE sender_email = ?", (sender_email,)
+                "SELECT * FROM thread_summaries WHERE thread_name = ?", (thread_name,)
             ).fetchone()
             return dict(row) if row else None
 
-    def upsert_sender_summary(
+    def upsert_thread_summary(
         self,
-        sender_email: str,
-        display_name: str,
+        thread_name: str,
+        members: str,
         summary: str,
-        matched_rule: str,
         pending_action: str = "none",
         message_count_delta: int = 1,
     ):
@@ -93,25 +91,24 @@ class Storage:
         with self._conn() as conn:
             conn.execute(
                 """
-                INSERT INTO sender_summaries
-                    (sender_email, display_name, summary, message_count, last_updated, matched_rule, pending_action)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(sender_email) DO UPDATE SET
-                    display_name   = excluded.display_name,
+                INSERT INTO thread_summaries
+                    (thread_name, members, summary, message_count, last_updated, pending_action)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(thread_name) DO UPDATE SET
+                    members        = excluded.members,
                     summary        = excluded.summary,
                     message_count  = message_count + ?,
                     last_updated   = excluded.last_updated,
-                    matched_rule   = excluded.matched_rule,
                     pending_action = excluded.pending_action
                 """,
-                (sender_email, display_name, summary, message_count_delta, now, matched_rule, pending_action,
+                (thread_name, members, summary, message_count_delta, now, pending_action,
                  message_count_delta),
             )
 
-    def get_all_sender_summaries(self) -> list[dict]:
+    def get_all_thread_summaries(self) -> list[dict]:
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT * FROM sender_summaries ORDER BY last_updated DESC"
+                "SELECT * FROM thread_summaries ORDER BY last_updated DESC"
             ).fetchall()
             return [dict(r) for r in rows]
 

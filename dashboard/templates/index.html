@@ -77,28 +77,28 @@
   </nav>
 
   <div class="stats-bar">
-    <div>Senders tracked: <span>{{ total }}</span></div>
+    <div>Threads tracked: <span>{{ total }}</span></div>
     <div>Last agent run: <span>{{ last_run }}</span></div>
     <div>Auto-refresh: <span>60s</span></div>
   </div>
 
-  {% if senders %}
+  {% if threads %}
   <table>
     <thead>
       <tr>
         <th>Action</th>
-        <th>Rule</th>
-        <th>Sender</th>
+        <th>Thread</th>
+        <th>Members</th>
         <th>Summary</th>
         <th>Msgs</th>
         <th>Updated</th>
       </tr>
     </thead>
     <tbody>
-      {% for s in senders %}
+      {% for t in threads %}
       <tr>
         <td>
-          {% set pa = s.pending_action or 'none' %}
+          {% set pa = t.pending_action or 'none' %}
           {% if pa == 'you' %}
             <span class="badge action-you">You to reply</span>
           {% elif pa == 'them' %}
@@ -108,34 +108,26 @@
           {% endif %}
         </td>
         <td>
-          {% set rule = s.matched_rule or '' %}
-          {% if rule.startswith('sender:') %}
-            <span class="badge badge-sender">{{ rule }}</span>
-          {% elif rule.startswith('keyword:') %}
-            <span class="badge badge-keyword">{{ rule }}</span>
-          {% else %}
-            <span class="badge badge-unmatched">{{ rule }}</span>
-          {% endif %}
-        </td>
-        <td>
           <div class="sender-name">
-            <a href="/sender/{{ s.sender_email }}">{{ s.display_name }}</a>
+            <a href="/thread/{{ t.thread_name }}">{{ t.thread_name }}</a>
           </div>
-          <div class="sender-email">{{ s.sender_email }}</div>
         </td>
         <td>
-          {% if s.summary_snippet %}
-          <div class="snippet">{{ s.summary_snippet }}{% if s.summary and s.summary|length > 120 %}…{% endif %}</div>
+          <div class="sender-email">{{ t.members }}</div>
+        </td>
+        <td>
+          {% if t.summary_snippet %}
+          <div class="snippet">{{ t.summary_snippet }}{% if t.summary and t.summary|length > 120 %}…{% endif %}</div>
           {% endif %}
         </td>
-        <td class="meta">{{ s.message_count }}</td>
-        <td class="meta">{{ s.relative_time }}</td>
+        <td class="meta">{{ t.message_count }}</td>
+        <td class="meta">{{ t.relative_time }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <div class="empty">No senders tracked yet. The agent will populate this as emails arrive.</div>
+  <div class="empty">No threads tracked yet. The agent will populate this as emails arrive.</div>
   {% endif %}
 </body>
 </html>
