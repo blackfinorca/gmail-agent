@@ -13,12 +13,18 @@ class _FakeGmail:
 
 
 def test_invoice_key_with_number():
-    assert Agent._invoice_key("4521", "billing@v.com", "msgid") == "4521|billing@v.com"
+    assert Agent._invoice_key("4521", "Vendor", "$10", "billing@v.com", "msgid") == "4521|billing@v.com"
 
 
-def test_invoice_key_fallback_to_message_id():
-    assert Agent._invoice_key("", "billing@v.com", "msgid") == "msgid"
-    assert Agent._invoice_key("   ", "billing@v.com", "msgid") == "msgid"
+def test_invoice_key_company_amount_fallback():
+    # no number but company+amount -> collapses re-sends of the same invoice
+    assert Agent._invoice_key("", "Ohara & Furukawa", "500,000 JPY", "law@x.com", "m1") \
+        == "ohara & furukawa|500,000 JPY|law@x.com"
+
+
+def test_invoice_key_message_id_last_resort():
+    assert Agent._invoice_key("", "", "", "law@x.com", "msgid") == "msgid"
+    assert Agent._invoice_key("   ", "", "", "law@x.com", "msgid") == "msgid"
 
 
 def test_parse_date_to_ts_valid():
