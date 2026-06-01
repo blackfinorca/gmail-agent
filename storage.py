@@ -180,6 +180,11 @@ class Storage:
             ).fetchone()
             return row is not None
 
+    def get_processed_ids(self) -> set:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT message_id FROM processed_messages").fetchall()
+            return {r["message_id"] for r in rows}
+
     def clear_processed_since(self, since_timestamp: int):
         with self._conn() as conn:
             conn.execute(

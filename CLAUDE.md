@@ -147,9 +147,11 @@ clears it for a chosen window so the agent can rescan.
 ### `gmail_client.py`
 - `GmailClient.authenticate()` — token refresh, falls back to browser OAuth
   on first run. Scope: `gmail.readonly`.
-- `fetch_new_messages(since_ts)` — **paginates** `messages.list` (the early
-  versions only fetched the first 100; the current code walks `nextPageToken`
-  to completion), then `messages.get(format='full')` for each.
+- `fetch_new_messages(since_ts, skip_ids=None)` — **paginates** `messages.list`
+  (the early versions only fetched the first 100; the current code walks
+  `nextPageToken` to completion), drops any listed id in `skip_ids`, then
+  `messages.get(format='full')` for each remaining. `skip_ids` (the processed
+  ledger) keeps the default whole-mailbox scan from re-downloading old mail.
 - `decode_body()` — prefers `text/plain`, strips quoted reply blocks.
 - `_collect_attachments(payload)` — walks the MIME tree, returns metadata
   `{filename, mime_type, attachment_id, size}` for every file part (added to
@@ -208,14 +210,18 @@ clears it for a chosen window so the agent can rescan.
   refreshes `members`).
 - `upsert_invoice`, `get_all_invoices()` — invoice CRUD; ordered by
   `sent_at DESC`. `get_all_invoices_grouped()` buckets them by `invoice_group`.
-- `is_processed`, `mark_processed`, `clear_processed_since`.
+- `is_processed`, `mark_processed`, `clear_processed_since`, `get_processed_ids()`
+  (the full set, used to skip already-fetched mail on the default full scan).
 - `get_all_thread_summaries()` — ordered by `last_updated DESC`.
 - `get_last_run_timestamp()` — falls back to "24h ago" if `run_log` is empty.
 
 ### `agent.py`
 - `Agent.run_once(since_override=None)`:
-  1. Determine `since` (last run, or override).
-  2. Fetch new Gmail messages.
+  1. Determine `since`: **0 (whole mailbox) by default**, or the `--since`
+     override. The whole-mailbox listing stays cheap because
+     `fetch_new_messages` is passed `storage.get_processed_ids()` and skips
+     downloading anything already processed.
+  2. Fetch Gmail messages (all dates unless `--since` narrows it).
   3. Skip already-processed; route surviving messages into two pipelines
      (a message can hit both if it matches both lists):
      - **Thread pipeline**: `thread_for(msg)` (subject keyword) → group messages
@@ -241,11 +247,11 @@ clears it for a chosen window so the agent can rescan.
 ### CLI flags (`python agent.py …`)
 | Flag                  | Effect |
 |-----------------------|--------|
-| _(none)_              | Run forever, poll every `POLL_INTERVAL_SECONDS`. |
+| _(none)_              | Run forever, poll every `POLL_INTERVAL_SECONDS`. Scans the **whole mailbox** each cycle (processed mail is skipped before download). |
 | `--once`              | Single poll cycle, then exit. |
 | `--with-dashboard`    | Also serve the Flask UI on `localhost:5050`. |
 | `--reload-rules`      | Send `SIGUSR1` to the running agent (via `agent.pid`) — picks up `rules.json` immediately. |
-| `--since 7d` (or `12h`, `30m`) | Override the lookback window and clear the processed-cache for that window so messages can be re-ingested. |
+| `--since 7d` (or `12h`, `30m`) | **Optional.** Narrow the lookback to that window AND clear the processed-cache for it, forcing a re-ingest. Without it the default lookback is all time. |
 
 ### `dashboard/app.py`
 - `GET /` — `index.html`, named threads listed (name + members), auto-refresh
@@ -318,10 +324,11 @@ When the user asks to set the project up from a fresh clone:
 
 | Goal                                 | How |
 |--------------------------------------|-----|
-| Re-summarise the last week           | `python agent.py --once --since 7d` |
+| Scan the whole mailbox (default)     | `python agent.py --once` |
+| Re-summarise just the last week      | `python agent.py --once --since 7d` |
 | Run with the dashboard               | `python agent.py --with-dashboard` |
 | Update rules without restart         | edit `rules.json`, then `python agent.py --reload-rules` |
-| Reset summaries (keep auth)          | delete `agent.db`; next run rebuilds from `--since` window |
+| Reset summaries (keep auth)          | delete `agent.db`; next run rebuilds from the full mailbox |
 | Inspect runs                         | `sqlite3 agent.db "select * from run_log order by run_at desc limit 20;"` |
 
 ---

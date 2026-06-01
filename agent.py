@@ -123,14 +123,19 @@ class Agent:
         llm_calls = 0
         errors = []
 
-        since = since_override if since_override is not None else self.storage.get_last_run_timestamp()
+        # Default: scan the whole mailbox (since=0). --since only narrows it.
+        # Already-processed messages are skipped before download, so repeat
+        # polls stay cheap even though the listing covers all dates.
+        since = since_override if since_override is not None else 0
         if since_override is not None:
             self.storage.clear_processed_since(since_override)
             logger.info("Cleared processed-message cache from %d onwards for rescan", since_override)
         logger.info("Polling for messages since timestamp %d", since)
 
         try:
-            messages = self.gmail.fetch_new_messages(since)
+            messages = self.gmail.fetch_new_messages(
+                since, skip_ids=self.storage.get_processed_ids()
+            )
         except Exception as e:
             logger.error("Failed to fetch messages: %s", e)
             errors.append(str(e))
