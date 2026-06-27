@@ -3,7 +3,7 @@ import re
 import sys
 import time
 
-from flask import Flask, abort, render_template
+from flask import Flask, abort, jsonify, render_template
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from storage import Storage
@@ -61,6 +61,25 @@ def invoices():
     for r in rows:
         r["sent_display"] = relative_time(r.get("sent_at", 0))
     return render_template("invoices.html", invoices=rows, total=len(rows))
+
+
+@app.route("/api/summary")
+def api_summary():
+    """Headline counts for the control-tower landing tile."""
+    threads = storage.get_all_thread_summaries()
+    pending_you = sum(1 for t in threads if (t.get("pending_action") or "none") == "you")
+    pending_them = sum(1 for t in threads if (t.get("pending_action") or "none") == "them")
+    last_run = storage.get_last_run_timestamp()
+    return jsonify(
+        {
+            "threads": len(threads),
+            "pending_you": pending_you,
+            "pending_them": pending_them,
+            "invoices": len(storage.get_all_invoices()),
+            "last_run": last_run,
+            "last_run_relative": relative_time(last_run),
+        }
+    )
 
 
 if __name__ == "__main__":

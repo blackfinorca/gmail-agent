@@ -9,71 +9,72 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background: #0f1117;
-      color: #c9d1d9;
-      font-family: 'Courier New', Courier, monospace;
+      background: #ffffff;
+      color: #171717;
+      font-family: system-ui, -apple-system, sans-serif;
       font-size: 14px;
       padding: 24px;
       max-width: 960px;
+      -webkit-font-smoothing: antialiased;
     }
 
-    h1 { color: #58a6ff; font-size: 20px; margin-bottom: 4px; }
+    h1 { color: #171717; font-size: 20px; margin-bottom: 4px; letter-spacing: -0.01em; }
 
     .stats-bar {
       display: flex;
       gap: 24px;
       margin-bottom: 28px;
-      color: #8b949e;
+      color: #6b7280;
       font-size: 13px;
     }
-    .stats-bar span { color: #c9d1d9; }
+    .stats-bar span { color: #171717; }
 
     table { width: 100%; border-collapse: collapse; }
 
     th {
       text-align: left;
-      color: #8b949e;
-      border-bottom: 1px solid #21262d;
+      color: #6b7280;
+      border-bottom: 1px solid #ececec;
       padding: 8px 12px;
-      font-weight: normal;
+      font-weight: 500;
       text-transform: uppercase;
       font-size: 11px;
       letter-spacing: 0.05em;
     }
 
-    td { padding: 12px; border-bottom: 1px solid #161b22; vertical-align: top; }
-    tr:hover td { background: #161b22; }
+    td { padding: 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+    tr:hover td { background: #fafafa; }
 
     .badge {
       display: inline-block;
       padding: 2px 7px;
       border-radius: 12px;
       font-size: 11px;
-      font-weight: bold;
+      font-weight: 600;
       white-space: nowrap;
     }
-    .badge-sender   { background: #1f4068; color: #58a6ff; }
-    .badge-keyword  { background: #2d2f0a; color: #e3b341; }
-    .badge-unmatched{ background: #21262d; color: #8b949e; }
-    .action-you     { background: #3d1f00; color: #f0883e; }
-    .action-them    { background: #0d2b1d; color: #3fb950; }
-    .action-none    { background: #21262d; color: #8b949e; }
+    .badge-sender   { background: #eef2ff; color: #1d4ed8; }
+    .badge-keyword  { background: #fef3e0; color: #b45309; }
+    .badge-unmatched{ background: #fafafa; color: #6b7280; }
+    .action-you     { background: #fef3e0; color: #b45309; }
+    .action-them    { background: #e8f3ec; color: #15803d; }
+    .action-none    { background: #fafafa; color: #6b7280; }
 
-    .sender-name a { color: #c9d1d9; text-decoration: none; }
-    .sender-name a:hover { color: #58a6ff; text-decoration: underline; }
-    .sender-email { color: #8b949e; font-size: 12px; margin-top: 2px; }
+    .sender-name a { color: #171717; text-decoration: none; font-weight: 500; }
+    .sender-name a:hover { color: #1d4ed8; text-decoration: underline; }
+    .sender-email { color: #6b7280; font-size: 12px; margin-top: 2px; }
 
-    .snippet { color: #8b949e; font-size: 12px; margin-top: 4px; }
-    .meta { color: #8b949e; font-size: 12px; white-space: nowrap; }
+    .snippet { color: #6b7280; font-size: 12px; margin-top: 4px; }
+    .meta { color: #6b7280; font-size: 12px; white-space: nowrap; }
 
-    .empty { text-align: center; color: #8b949e; padding: 60px 0; }
+    .empty { text-align: center; color: #9ca3af; padding: 60px 0; }
   </style>
 </head>
 <body>
   <h1>Gmail Intelligence Agent</h1>
   <nav style="margin:12px 0 24px; display:flex; gap:16px;">
-    <a href="/" style="color:#c9d1d9; text-decoration:none; border-bottom:2px solid #58a6ff; padding-bottom:4px;">Emails</a>
-    <a href="/invoices" style="color:#8b949e; text-decoration:none; padding-bottom:4px;">Invoices</a>
+    <a href="/" style="color:#1d4ed8; text-decoration:none; border-bottom:2px solid #1d4ed8; padding-bottom:4px; font-weight:500;">Emails</a>
+    <a href="/invoices" style="color:#6b7280; text-decoration:none; padding-bottom:4px;">Invoices</a>
   </nav>
 
   <div class="stats-bar">

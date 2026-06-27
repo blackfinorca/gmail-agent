@@ -8,19 +8,20 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background: #0f1117;
-      color: #c9d1d9;
-      font-family: 'Courier New', Courier, monospace;
+      background: #ffffff;
+      color: #171717;
+      font-family: system-ui, -apple-system, sans-serif;
       font-size: 14px;
       padding: 24px;
       max-width: 860px;
+      -webkit-font-smoothing: antialiased;
     }
 
-    .back a { color: #58a6ff; text-decoration: none; font-size: 13px; }
+    .back a { color: #1d4ed8; text-decoration: none; font-size: 13px; }
     .back a:hover { text-decoration: underline; }
 
-    h1 { color: #e6edf3; font-size: 18px; margin: 16px 0 4px; }
-    .members { color: #8b949e; font-size: 13px; margin-bottom: 20px; }
+    h1 { color: #171717; font-size: 18px; margin: 16px 0 4px; letter-spacing: -0.01em; }
+    .members { color: #6b7280; font-size: 13px; margin-bottom: 20px; }
 
     .meta-grid {
       display: grid;
@@ -29,22 +30,22 @@
       font-size: 13px;
       margin-bottom: 24px;
     }
-    .meta-grid .label { color: #8b949e; }
-    .meta-grid .value { color: #c9d1d9; }
+    .meta-grid .label { color: #6b7280; }
+    .meta-grid .value { color: #171717; }
 
     .badge {
       display: inline-block;
       padding: 2px 7px;
       border-radius: 12px;
       font-size: 11px;
-      font-weight: bold;
+      font-weight: 600;
     }
-    .action-you     { background: #3d1f00; color: #f0883e; }
-    .action-them    { background: #0d2b1d; color: #3fb950; }
-    .action-none    { background: #21262d; color: #8b949e; }
+    .action-you     { background: #fef3e0; color: #b45309; }
+    .action-them    { background: #e8f3ec; color: #15803d; }
+    .action-none    { background: #fafafa; color: #6b7280; }
 
     .summary-label {
-      color: #8b949e;
+      color: #6b7280;
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -52,16 +53,16 @@
     }
 
     .summary-box {
-      background: #161b22;
-      border: 1px solid #21262d;
+      background: #fafafa;
+      border: 1px solid #ececec;
       border-radius: 6px;
       padding: 20px 24px;
       line-height: 1.7;
-      color: #e6edf3;
+      color: #171717;
     }
 
     .summary-box h3 {
-      color: #58a6ff;
+      color: #1d4ed8;
       font-size: 13px;
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -70,14 +71,14 @@
     .summary-box h3:first-child { margin-top: 0; }
     .summary-box ul { padding-left: 20px; margin: 4px 0 12px; }
     .summary-box li { margin: 4px 0; }
-    .summary-box strong { color: #fff; }
+    .summary-box strong { color: #171717; }
     .summary-box p { margin: 6px 0; }
   </style>
 </head>
 <body>
   <nav style="margin:12px 0 24px; display:flex; gap:16px;">
-    <a href="/" style="color:#8b949e; text-decoration:none; padding-bottom:4px;">Emails</a>
-    <a href="/invoices" style="color:#8b949e; text-decoration:none; padding-bottom:4px;">Invoices</a>
+    <a href="/" style="color:#6b7280; text-decoration:none; padding-bottom:4px;">Emails</a>
+    <a href="/invoices" style="color:#6b7280; text-decoration:none; padding-bottom:4px;">Invoices</a>
   </nav>
   <div class="back"><a href="/">← Back to all threads</a></div>
 
